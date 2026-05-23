@@ -15,3 +15,13 @@ target_link_libraries(WfAverage
   junosw::RootIOSvc
   SNiPER::RootWriterLib
 )
+
+add_executable(draw_wf_avg draw_wf_avg.cxx)
+target_link_libraries(draw_wf_avg
+  ROOT::Core
+  ROOT::RIO
+  ROOT::Tree
+  ROOT::Hist
+  ROOT::Graf
+  ROOT::Gpad
+)
