@@ -46,6 +46,7 @@ public:
 
     m_tree = svc->bookTree(*getParent(), "USER_OUTPUT/wf_avg", "wf_average");
     m_tree->Branch("channelId", &m_out_channel_id);
+    m_tree->Branch("copyId",    &m_out_copy_id);
     m_tree->Branch("numEvents", &m_out_num_events);
     m_tree->Branch("theta",      &m_out_theta);
     m_tree->Branch("phi",        &m_out_phi);
@@ -121,6 +122,8 @@ public:
       m_out_num_events = n;
 
       Identifier pid(pmtId);
+      auto *idServ = IDService::getIdServ();
+      m_out_copy_id = idServ->id2CopyNo(pid);
       auto *pmt = m_cdGeom->getPmt(pid);
       if (!pmt) {
         LogFatal << "Failed to get PMT geometry for channel " << pmtId << '\n';
@@ -158,6 +161,7 @@ private:
   int m_events_processed{0};
 
   int                m_out_channel_id{};
+  unsigned int       m_out_copy_id{};
   int                m_out_num_events{};
   double             m_out_theta{};
   double             m_out_phi{};

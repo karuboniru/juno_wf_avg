@@ -17,6 +17,7 @@
 
 struct Entry {
   int channel_id;
+  unsigned int copy_id;
   int num_events;
   double theta;
   double phi;
@@ -46,11 +47,13 @@ int main(int argc, char **argv) {
   }
 
   int    channel_id, num_events;
+  unsigned int copy_id;
   double theta, phi;
   std::vector<double> *waveform = nullptr;
   std::vector<double> *stddev   = nullptr;
 
   t->SetBranchAddress("channelId", &channel_id);
+  t->SetBranchAddress("copyId",    &copy_id);
   t->SetBranchAddress("numEvents", &num_events);
   t->SetBranchAddress("theta",     &theta);
   t->SetBranchAddress("phi",       &phi);
@@ -62,7 +65,7 @@ int main(int argc, char **argv) {
 
   for (Long64_t i = 0; i < t->GetEntries(); ++i) {
     t->GetEntry(i);
-    entries.push_back({channel_id, num_events, theta, phi,
+    entries.push_back({channel_id, copy_id, num_events, theta, phi,
                        *waveform, *stddev});
   }
   f.Close();
@@ -159,7 +162,8 @@ int main(int argc, char **argv) {
     latex.SetTextSize(0.035);
 
     latex.SetTextAlign(12);
-    latex.DrawLatex(0.14, 0.92, ("PMT Channel " + std::to_string(e.channel_id)).c_str());
+    latex.DrawLatex(0.14, 0.92,
+                    ("PMT copy #" + std::to_string(e.copy_id)).c_str());
 
     char pos_str[128];
     std::snprintf(pos_str, sizeof(pos_str),
