@@ -16,6 +16,11 @@ def get_parser():
                        help="text file listing input rtraw paths, one per line")
     parser.add_argument("--user-output", default="wf_avg.root",
                         help="output ROOT file")
+    parser.add_argument("--time-align", action="store_true", default=False,
+                        help="enable trigger time alignment via Hamamatsu ref channel")
+    parser.add_argument("--no-skip-missing-ref", action="store_true", default=False,
+                        help="process events with delta_t=0 when ref channel absent "
+                             "(default: skip)")
     return parser
 
 
@@ -47,8 +52,15 @@ def run(args):
     geom.property("GeomFile").set("default")
     geom.property("FastInit").set(True)
 
+    pmtparam = task.createSvc("PMTParamSvc")
+
     Sniper.loadDll("build/lib/libWfAverage.so")
-    task.createAlg("WfAverage")
+    wfa = task.createAlg("WfAverage")
+    wfa.property("IgnoreLowGain").set(True)
+    if args.time_align:
+        wfa.property("TimeAlign").set(True)
+    if args.no_skip_missing_ref:
+        wfa.property("SkipOnMissingRef").set(False)
 
     task.show()
     task.run()

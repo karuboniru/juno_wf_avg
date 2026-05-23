@@ -20,6 +20,7 @@
 #include <array>
 #include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <map>
 #include <numeric>
 #include <vector>
@@ -43,6 +44,8 @@ public:
     declProp("LowGainScale", m_lg_scale = 0.55);
     declProp("BaselineSampleCount", m_baseline_n = 100);
     declProp("IgnoreLowGain", m_ignore_lg = false);
+    declProp("TimeAlign", m_time_align = false);
+    declProp("SkipOnMissingRef", m_skip_on_missing = true);
   }
 
   WfAverage(WfAverage &&) = delete;
@@ -127,6 +130,76 @@ public:
     const auto &channels = evt->channelData();
     const double ratio = m_hg_scale / m_lg_scale;
 
+    int delta_t = 0;
+
+    if (m_time_align && !m_first_event_done) {
+      IDService *idServ = IDService::getIdServ();
+
+      double best_val  = std::numeric_limits<double>::max();
+      int    best_chan = -1;
+      int    best_idx  = -1;
+
+      for (const auto &[pmtId, waveform] : channels) {
+        const auto &adc = waveform->adc();
+        if (adc.size() != kWfLength) {
+          LogFatal << "Unexpected waveform length " << adc.size()
+                   << " for PMT " << pmtId << " (expected " << kWfLength << ')'
+                   << '\n';
+          std::abort();
+        }
+        if (!waveform->isHighGain()) continue;
+
+        Identifier pid(pmtId);
+        unsigned int copyId = idServ->id2CopyNo(pid);
+        if (m_pmt_svc->isNNVT(copyId)) continue;
+
+        double baseline = std::accumulate(adc.begin(),
+                                          adc.begin() + m_baseline_n, 0.0)
+                        / m_baseline_n;
+
+        for (int i = 0; i < kWfLength; ++i) {
+          double v = (static_cast<double>(adc[i]) - baseline) * ratio;
+          if (v < best_val) {
+            best_val  = v;
+            best_chan = pmtId;
+            best_idx  = i;
+          }
+        }
+      }
+
+      m_ref_channel   = best_chan;
+      m_ref_peak_time = best_idx;
+      m_first_event_done = true;
+
+      if (best_chan < 0)
+        LogWarn << "TimeAlign: no Hamamatsu HG channel found in first event"
+                << '\n';
+    } else if (m_time_align && m_ref_channel >= 0) {
+      auto it = channels.find(m_ref_channel);
+      if (it != channels.end()) {
+        const auto &ref_wf  = it->second;
+        const auto &ref_adc = ref_wf->adc();
+        double ref_baseline = std::accumulate(ref_adc.begin(),
+                                              ref_adc.begin() + m_baseline_n, 0.0)
+                            / m_baseline_n;
+        double ref_scale = ref_wf->isHighGain() ? ratio : 1.0;
+
+        double cur_peak_val = std::numeric_limits<double>::max();
+        int    cur_peak_idx = -1;
+        for (int i = 0; i < kWfLength; ++i) {
+          double v = (static_cast<double>(ref_adc[i]) - ref_baseline) * ref_scale;
+          if (v < cur_peak_val) {
+            cur_peak_val = v;
+            cur_peak_idx = i;
+          }
+        }
+        delta_t = m_ref_peak_time - cur_peak_idx;
+      } else {
+        ++m_skipped_ref_missing;
+        if (m_skip_on_missing) return true;
+      }
+    }
+
     for (const auto &[pmtId, waveform] : channels) {
       const auto &adc = waveform->adc();
       if (adc.size() != kWfLength) {
@@ -149,11 +222,27 @@ public:
 
       auto &gd = m_acc[pmtId];
 
-      for (int i = 0; i < kWfLength; ++i) {
-        double v = (static_cast<double>(adc[i]) - baseline) * scale;
-        gd.sum[i]    += v;
-        gd.sq_sum[i] += v * v;
+      if (m_time_align && delta_t != 0) {
+        m_shifted.fill(0.0);
+        for (int i = 0; i < kWfLength; ++i) {
+          double v = (static_cast<double>(adc[i]) - baseline) * scale;
+          int new_i = i + delta_t;
+          if (new_i >= 0 && new_i < kWfLength) {
+            m_shifted[new_i] = v;
+          }
+        }
+        for (int i = 0; i < kWfLength; ++i) {
+          gd.sum[i]    += m_shifted[i];
+          gd.sq_sum[i] += m_shifted[i] * m_shifted[i];
+        }
+      } else {
+        for (int i = 0; i < kWfLength; ++i) {
+          double v = (static_cast<double>(adc[i]) - baseline) * scale;
+          gd.sum[i]    += v;
+          gd.sq_sum[i] += v * v;
+        }
       }
+
       ++gd.count;
       if (is_hg) ++gd.num_hg;
       else       ++gd.num_lg;
@@ -166,7 +255,12 @@ public:
 
   bool finalize() final {
     LogInfo << "WfAverage::finalize — events visited: " << m_events_visited
-            << ", with CD waveform: " << m_events_with_cd << '\n';
+            << ", with CD waveform: " << m_events_with_cd;
+    if (m_time_align)
+      LogInfo << " [time-align: ref_chan=" << m_ref_channel
+              << " ref_peak=" << m_ref_peak_time
+              << " skipped_missing=" << m_skipped_ref_missing << ']';
+    LogInfo << '\n';
 
     for (auto &[pmtId, gd] : m_acc) {
       m_out_channel_id = pmtId;
@@ -223,6 +317,15 @@ private:
   double m_hg_scale{};
   double m_lg_scale{};
   int    m_baseline_n{};
+
+  bool m_time_align{};
+  bool m_skip_on_missing{};
+  bool m_first_event_done{false};
+  int  m_ref_channel{-1};
+  int  m_ref_peak_time{-1};
+  int  m_skipped_ref_missing{0};
+
+  mutable std::array<double, kWfLength> m_shifted{};
 
   int                m_out_channel_id{};
   unsigned int       m_out_copy_id{};

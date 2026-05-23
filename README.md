@@ -55,6 +55,8 @@ python run.py --input-list files.txt
 | `LowGainScale` | double | `0.55` | LG scale 因子 |
 | `BaselineSampleCount` | int | `100` | 用于基线估计的前 N 个采样点 |
 | `IgnoreLowGain` | bool | `false` | 若 `true`，跳过所有 LG channel |
+| `TimeAlign` | bool | `false` | 若 `true`，启用 trigger 时间校准（全局时间平移对齐） |
+| `SkipOnMissingRef` | bool | `true` | `TimeAlign` 生效时，若参考 channel 不在当前 event 中则跳过该 event |
 
 其中 $r = \frac{\text{HighGainScale}}{\text{LowGainScale}} \approx 0.145$ 为缩放比。
 
@@ -134,6 +136,27 @@ JUNO 电子学对 PMT 信号有两种增益范围：
 这样所有 event 的波形都以 0 为基线对齐，且 HG 与 LG 可直接混合累加。
 
 `IgnoreLowGain` 模式：若该 channel 出现的是 LG 事件，直接跳过不累加。
+
+### Trigger 时间校准（`TimeAlign`）
+
+当 `TimeAlign = true` 时，在执行求平均之前会对每个 event 进行全局时间平移，
+消除 trigger 本身的 jitter 影响：
+
+1. **首个 CD event**：在所有 Hamamatsu HG channel 中找出波形最低点
+   （电子学定义：数值最低 = 信号最大）作为参考，记录参考 channel 和峰值采样点。
+   若首个 event 中没有 Hamamatsu HG channel，则发出警告并禁用校准。
+
+2. **后续 event**：查找参考 channel 的峰值时间，计算时间平移量
+   `δt = ref_peak_time − cur_peak_time`，使得当前 event 的参考 channel 峰值
+   与首个 event 严格对齐。若参考 channel 不在当前 event 中且
+   `SkipOnMissingRef = true`（默认），则跳过该 event；否则以 `δt = 0` 处理。
+
+3. **平移**：将所有 channel 的波形按 `δt` 整体平移。平移后超出
+   [0, 1007] 范围的时间 bin 丢弃，空缺位置用 0 补齐，然后进入正常的累加流程。
+
+4. 结束时报告参考 channel、参考峰值时间、因缺失参考而跳过的 event 数。
+
+
 
 ---
 
