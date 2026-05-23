@@ -42,10 +42,16 @@ cmake --build build
 
 ```bash
 python run.py --input file1.rtraw file2.rtraw ...  [--evtmax N] [--user-output wf_avg.root]
-
-# 或通过文本文件列出输入路径（每行一个）：
-python run.py --input-list files.txt
+python run.py --input-list files.txt                [--evtmax N] [--user-output wf_avg.root]
 ```
+
+其它选项：
+| 选项 | 说明 |
+|---|---|
+| `--time-align` | 启用 trigger 时间校准（对齐 Hamamatsu HG 参考 channel） |
+| `--ignore-low-gain` | 跳过所有低增益事件，仅累加 HG |
+| `--trigger-type TYPE` | 按 CdTrigger 类型过滤事件（如 `Calibration`），默认不过滤 |
+| `--no-skip-missing-ref` | 当参考 channel 缺失时不跳过 event（以 `δt=0` 处理），默认跳过 |
 
 ### 算法属性（可在 Python 中覆盖）
 
@@ -57,6 +63,7 @@ python run.py --input-list files.txt
 | `IgnoreLowGain` | bool | `false` | 若 `true`，跳过所有 LG channel |
 | `TimeAlign` | bool | `false` | 若 `true`，启用 trigger 时间校准（全局时间平移对齐） |
 | `SkipOnMissingRef` | bool | `true` | `TimeAlign` 生效时，若参考 channel 不在当前 event 中则跳过该 event |
+| `TriggerTypeFilter` | string | `""` (空) | 仅处理匹配该 trigger type 的事件；留空则不过滤 |
 
 其中 $r = \frac{\text{HighGainScale}}{\text{LowGainScale}} \approx 0.145$ 为缩放比。
 
@@ -80,6 +87,7 @@ TTree `USER_OUTPUT/wf_avg`（内部名 `wf_average`），每行一个 channel：
 | `numLG` | int | Low-gain 事件数（`IgnoreLowGain=true` 时为 -1） |
 | `theta` | double | PMT 天顶角 [rad] |
 | `phi` | double | PMT 方位角 [rad] |
+| `isNNVT` | bool | PMT 型号：`true` = NNVT, `false` = Hamamatsu |
 | `waveform` | vector\<double\> | 基线归零后的平均波形（1008 个时间 bin） |
 | `stddev` | vector\<double\> | 标准差（1008 个时间 bin） |
 
@@ -165,13 +173,16 @@ JUNO 电子学对 PMT 信号有两种增益范围：
 ### 运行
 
 ```bash
-./build/bin/draw_wf_avg.exe [input.root] [output.pdf] [max_per_group]
+./build/bin/draw_wf_avg.exe --input wf_avg.root --output plots.pdf --max-per-group 10
+./build/bin/draw_wf_avg.exe --input wf_avg.root --no-band           # 禁用 ±1σ 置信带
+./build/bin/draw_wf_avg.exe --help                                  # 显示所有选项
 ```
 
-参数：
-- `input.root` — WfAverage 输出的 ROOT 文件（默认 `wf_avg.root`）
-- `output.pdf` — 输出多页 PDF（默认 `wf_avg_plots.pdf`）
-- `max_per_group` — 每个 θ 组选取的 channel 数（默认 10）
+选项：
+- `-i, --input` — WfAverage 输出的 ROOT 文件（默认 `wf_avg.root`）
+- `-o, --output` — 输出多页 PDF（默认 `wf_avg_plots.pdf`）
+- `-n, --max-per-group` — 每个 θ 组选取的 channel 数（默认 10）
+- `--no-band` — 禁用 ±1σ 半透明置信带
 
 ### 选取逻辑
 
@@ -190,7 +201,7 @@ JUNO 电子学对 PMT 信号有两种增益范围：
 
 ### 每页布局
 
-- **左上角**: `PMT copy #XXXX`
+- **左上角**: `PMT copy #XXXX (H)` — H = Hamamatsu, N = NNVT
 - **右上角**: `θ = XX.X°  φ = XX.X°  H=X L=Y`
 - **中央水印**: `θ group: π/4`（半透明）
 - **主体**: 蓝色实线 = 平均波形，灰色半透明填充 = ±1σ 置信带
@@ -237,7 +248,7 @@ root [1] USER_OUTPUT->cd("wf_avg")
 root [2] wf_average->Scan("copyId:numEvents:theta:phi:numHG:numLG")
 
 # 6. 生成画图
-./build/bin/draw_wf_avg.exe wf_avg.root wf_avg_plots.pdf 10
+./build/bin/draw_wf_avg.exe --input wf_avg.root --output wf_avg_plots.pdf --max-per-group 10
 
 # 7. 查看 PDF
 evince wf_avg_plots.pdf

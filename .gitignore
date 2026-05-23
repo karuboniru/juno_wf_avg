@@ -1,4 +1,6 @@
 build/
 *.root
 *.pyc
+*.pdf
+*.list
 __pycache__/
