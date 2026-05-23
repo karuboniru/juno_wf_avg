@@ -3,6 +3,11 @@
 #include <EvtNavigator/EvtNavHelper.h>
 #include <EvtNavigator/EvtNavigator.h>
 #include <EvtNavigator/NavBuffer.h>
+#include <Geometry/CdGeom.h>
+#include <Geometry/IRecGeomSvc.hh>
+#include <Geometry/PmtGeom.h>
+#include <Identifier/IDService.h>
+#include <Identifier/Identifier.h>
 #include <RootWriter/RootWriter.h>
 #include <SniperKernel/AlgBase.h>
 #include <SniperKernel/AlgFactory.h>
@@ -42,8 +47,10 @@ public:
     m_tree = svc->bookTree(*getParent(), "USER_OUTPUT/wf_avg", "wf_average");
     m_tree->Branch("channelId", &m_out_channel_id);
     m_tree->Branch("numEvents", &m_out_num_events);
+    m_tree->Branch("theta",      &m_out_theta);
+    m_tree->Branch("phi",        &m_out_phi);
     m_tree->Branch("waveform", &m_out_waveform);
-    m_tree->Branch("stddev", &m_out_stddev);
+    m_tree->Branch("stddev",   &m_out_stddev);
 
     SniperDataPtr<JM::NavBuffer> navBuf(getParent(), "/Event");
     if (navBuf.invalid()) {
@@ -51,6 +58,16 @@ public:
       return false;
     }
     m_buf = navBuf.data();
+
+    SniperPtr<IRecGeomSvc> recGeomSvc(getParent(), "RecGeomSvc");
+    if (recGeomSvc.invalid()) {
+      LogError << "Failed to get RecGeomSvc" << '\n';
+      return false;
+    }
+    m_cdGeom = recGeomSvc->getCdGeom();
+
+    IDService *idServ = IDService::getIdServ();
+    idServ->init();
 
     return true;
   }
@@ -102,6 +119,16 @@ public:
 
       m_out_channel_id = pmtId;
       m_out_num_events = n;
+
+      Identifier pid(pmtId);
+      auto *pmt = m_cdGeom->getPmt(pid);
+      if (!pmt) {
+        LogFatal << "Failed to get PMT geometry for channel " << pmtId << '\n';
+        std::abort();
+      }
+      m_out_theta = pmt->getCenter().Theta();
+      m_out_phi   = pmt->getCenter().Phi();
+
       m_out_waveform.resize(kWfLength);
       m_out_stddev.resize(kWfLength);
 
@@ -122,6 +149,7 @@ public:
 private:
   JM::NavBuffer *m_buf{};
   TTree         *m_tree{};
+  CdGeom        *m_cdGeom{};
 
   std::map<int, std::array<double, kWfLength>> m_sum;
   std::map<int, std::array<double, kWfLength>> m_sq_sum;
@@ -131,6 +159,8 @@ private:
 
   int                m_out_channel_id{};
   int                m_out_num_events{};
+  double             m_out_theta{};
+  double             m_out_phi{};
   std::vector<double> m_out_waveform;
   std::vector<double> m_out_stddev;
 };
