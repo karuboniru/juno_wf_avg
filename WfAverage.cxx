@@ -116,6 +116,15 @@ public:
     auto *nav = m_buf->curEvt();
     if (!nav) return true;
 
+    if (!m_trig_filter.empty()) {
+      bool matched = false;
+      if (auto trig_hdr = JM::getHeaderObject<JM::CdTriggerHeader>(nav))
+        if (trig_hdr->hasEvent())
+          for (const auto &t : trig_hdr->event()->triggerType())
+            if (t == m_trig_filter) { matched = true; break; }
+      if (!matched) return true;
+    }
+
     auto hdr = JM::getHeaderObject<JM::CdWaveformHeader>(nav);
     if (!(hdr && hdr->hasEvent())) {
       if (m_events_visited % 1000 == 0)
@@ -129,15 +138,6 @@ public:
     if (!evt) return true;
 
     ++m_events_with_cd;
-
-    if (!m_trig_filter.empty()) {
-      bool matched = false;
-      if (auto trig_hdr = JM::getHeaderObject<JM::CdTriggerHeader>(nav))
-        if (trig_hdr->hasEvent())
-          for (const auto &t : trig_hdr->event()->triggerType())
-            if (t == m_trig_filter) { matched = true; break; }
-      if (!matched) return true;
-    }
 
     const auto &channels = evt->channelData();
     const double ratio = m_hg_scale / m_lg_scale;
