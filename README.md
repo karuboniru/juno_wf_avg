@@ -10,6 +10,7 @@ wf_average/
 ├── CMakeLists.txt       # CMake 构建：MODULE (WfAverage) + EXECUTABLE (draw_wf_avg)
 ├── WfAverage.cxx        # SNiPER AlgBase 算法 — 读 rtraw → 累加 → 输出
 ├── run.py               # Python 驱动脚本（多个输入文件 / --input-list）
+├── gen_run_list.sh      # 从 EOS 路径生成 root:// URL 文件列表
 ├── draw_wf_avg.cxx      # ROOT 独立画图程序 — 读 wf_avg.root → 多页 PDF
 └── README.md
 ```
@@ -174,7 +175,23 @@ JUNO 电子学对 PMT 信号有两种增益范围：
 
 ---
 
-## 3. 典型工作流
+## 3. 生成输入文件列表（gen_run_list.sh）
+
+通过 EOS 路径通配模式生成 `root://` URL 文件列表，供 `run.py --input-list` 使用。
+
+```bash
+./gen_run_list.sh '/eos/juno/juno-rtraw/J25.7.1/global_trigger/00015000/00015000/15010/*.rtraw'
+```
+
+输出 `<run-id>.list` 文件（如 `15010.list`），每行一个完整 URL：
+
+```
+root://junoeos01.ihep.ac.cn//eos/juno/juno-rtraw/.../RUN.15010.JUNODAQ.…_J25.7.1.rtraw
+root://junoeos01.ihep.ac.cn//eos/juno/juno-rtraw/.../RUN.15010.JUNODAQ.…_J25.7.1.rtraw
+…
+```
+
+## 4. 典型工作流
 
 ```bash
 # 1. 环境设置
@@ -183,17 +200,22 @@ source ~/.junorc
 # 2. 构建
 cmake -B build -G Ninja && cmake --build build
 
-# 3. 运行平均算法
-python run.py --input /path/to/run_*.rtraw --user-output wf_avg.root
+# 3. 生成 EOS 文件列表（可选）
+./gen_run_list.sh '/eos/juno/juno-rtraw/.../<run_id>/*.rtraw'
 
-# 4. 检查输出（ROOT 交互）
+# 4. 运行平均算法
+python run.py --input /path/to/run_*.rtraw --user-output wf_avg.root
+# 或使用文件列表
+python run.py --input-list <run_id>.list --user-output wf_avg.root
+
+# 5. 检查输出（ROOT 交互）
 root -l wf_avg.root
 root [1] USER_OUTPUT->cd("wf_avg")
 root [2] wf_average->Scan("copyId:numEvents:theta:phi:numHG:numLG")
 
-# 5. 生成画图
+# 6. 生成画图
 ./build/bin/draw_wf_avg.exe wf_avg.root wf_avg_plots.pdf 10
 
-# 6. 查看 PDF
+# 7. 查看 PDF
 evince wf_avg_plots.pdf
 ```
