@@ -20,34 +20,17 @@
 #include <cmath>
 #include <cstdlib>
 #include <map>
-#include <set>
+#include <numeric>
 #include <vector>
 
 static constexpr int kWfLength = 1008;
-
-// ─── baseline: most frequent rounded ADC value in average waveform ───
-
-static double find_baseline(const std::array<double, kWfLength> &avg) {
-  std::map<long, int> counts;
-  for (double v : avg)
-    ++counts[std::lround(v)];
-  long peak = 0;
-  int max_count = 0;
-  for (const auto &[val, cnt] : counts) {
-    if (cnt > max_count) {
-      max_count = cnt;
-      peak = val;
-    }
-  }
-  return static_cast<double>(peak);
-}
-
-// ─── per-gain band accumulation ───
 
 struct GainAccum {
   std::array<double, kWfLength> sum{};
   std::array<double, kWfLength> sq_sum{};
   int count{0};
+  int num_hg{0};
+  int num_lg{0};
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -55,9 +38,10 @@ struct GainAccum {
 class WfAverage final : public AlgBase {
 public:
   WfAverage(const std::string &name) : AlgBase(name) {
-    declProp("EnableGainCorrection", m_enable_gain_corr = true);
     declProp("HighGainScale", m_hg_scale = 0.08);
     declProp("LowGainScale", m_lg_scale = 0.55);
+    declProp("BaselineSampleCount", m_baseline_n = 100);
+    declProp("IgnoreLowGain", m_ignore_lg = false);
   }
 
   WfAverage(WfAverage &&) = delete;
@@ -109,7 +93,7 @@ public:
     return true;
   }
 
-  // ═══ execute — accumulate raw ADC, separated by gain range ═══
+  // ═══ execute — per-event baseline subtraction + inline gain scaling ═══
 
   bool execute() final {
     ++m_events_visited;
@@ -132,6 +116,7 @@ public:
     ++m_events_with_cd;
 
     const auto &channels = evt->channelData();
+    const double ratio = m_hg_scale / m_lg_scale;
 
     for (const auto &[pmtId, waveform] : channels) {
       const auto &adc = waveform->adc();
@@ -143,107 +128,46 @@ public:
       }
 
       bool is_hg = waveform->isHighGain();
-      auto &gd   = is_hg ? m_hg[pmtId] : m_lg[pmtId];
+
+      if (m_ignore_lg && !is_hg)
+        continue;
+
+      double baseline = std::accumulate(adc.begin(),
+                                        adc.begin() + m_baseline_n, 0.0)
+                      / m_baseline_n;
+
+      double scale = is_hg ? ratio : 1.0;
+
+      auto &gd = m_acc[pmtId];
 
       for (int i = 0; i < kWfLength; ++i) {
-        double v = static_cast<double>(adc[i]);
+        double v = (static_cast<double>(adc[i]) - baseline) * scale;
         gd.sum[i]    += v;
         gd.sq_sum[i] += v * v;
       }
       ++gd.count;
+      if (is_hg) ++gd.num_hg;
+      else       ++gd.num_lg;
     }
 
     return true;
   }
 
-  // ═══ finalize — post-hoc baselines → scale → pool → output ═══
+  // ═══ finalize — compute μ, σ, fill output ═══
 
   bool finalize() final {
     LogInfo << "WfAverage::finalize — events visited: " << m_events_visited
             << ", with CD waveform: " << m_events_with_cd << '\n';
 
-    // collect union of all channels from both gain maps
-    std::set<int> all_channels;
-    for (const auto &[id, _] : m_hg) all_channels.insert(id);
-    for (const auto &[id, _] : m_lg) all_channels.insert(id);
-
-    int n_hg_only = 0, n_lg_only = 0, n_both = 0;
-
-    const double ratio = m_hg_scale / m_lg_scale;
-
-    for (int pmtId : all_channels) {
-      auto it_hg = m_hg.find(pmtId);
-      auto it_lg = m_lg.find(pmtId);
-
-      const GainAccum *hg_acc = (it_hg != m_hg.end()) ? &it_hg->second : nullptr;
-      const GainAccum *lg_acc = (it_lg != m_lg.end()) ? &it_lg->second : nullptr;
-
-      // ── tally ──
-      if (hg_acc && lg_acc) ++n_both;
-      else if (hg_acc)      ++n_hg_only;
-      else                  ++n_lg_only;
-
-      // ── compute per-gain μ, σ ──
-      std::array<double, kWfLength> mu_hg{}, sigma_hg{};
-      std::array<double, kWfLength> mu_lg{}, sigma_lg{};
-      int n_hg = 0, n_lg = 0;
-
-      if (hg_acc) {
-        n_hg = hg_acc->count;
-        double n_inv = 1.0 / n_hg;
-        for (int i = 0; i < kWfLength; ++i) {
-          mu_hg[i]    = hg_acc->sum[i] * n_inv;
-          double var  = hg_acc->sq_sum[i] * n_inv - mu_hg[i] * mu_hg[i];
-          sigma_hg[i] = std::sqrt(std::max(0.0, var));
-        }
-      }
-      if (lg_acc) {
-        n_lg = lg_acc->count;
-        double n_inv = 1.0 / n_lg;
-        for (int i = 0; i < kWfLength; ++i) {
-          mu_lg[i]    = lg_acc->sum[i] * n_inv;
-          double var  = lg_acc->sq_sum[i] * n_inv - mu_lg[i] * mu_lg[i];
-          sigma_lg[i] = std::sqrt(std::max(0.0, var));
-        }
-      }
-
-      // ── high-gain correction (if enabled) ──
-      if (m_enable_gain_corr && n_hg > 0 && n_lg > 0) {
-        double baseline = find_baseline(mu_hg);
-        for (int i = 0; i < kWfLength; ++i) {
-          mu_hg[i]    = (mu_hg[i] - baseline) * ratio + baseline;
-          sigma_hg[i] = sigma_hg[i] * ratio;
-        }
-      }
-
-      // ── weighted pool ──
-      int n_total = n_hg + n_lg;
-      std::array<double, kWfLength> mu{}, sigma{};
-
-      if (n_hg == 0) {
-        mu    = mu_lg;
-        sigma = sigma_lg;
-      } else if (n_lg == 0) {
-        mu    = mu_hg;
-        sigma = sigma_hg;
-      } else {
-        double inv_n = 1.0 / n_total;
-        for (int i = 0; i < kWfLength; ++i) {
-          mu[i] = (n_hg * mu_hg[i] + n_lg * mu_lg[i]) * inv_n;
-
-          double between_var = n_hg * (mu_hg[i] - mu[i]) * (mu_hg[i] - mu[i])
-                             + n_lg * (mu_lg[i] - mu[i]) * (mu_lg[i] - mu[i]);
-          double within_var  = n_hg * sigma_hg[i] * sigma_hg[i]
-                             + n_lg * sigma_lg[i] * sigma_lg[i];
-          sigma[i] = std::sqrt((within_var + between_var) * inv_n);
-        }
-      }
-
-      // ── fill output ──
+    for (auto &[pmtId, gd] : m_acc) {
       m_out_channel_id = pmtId;
-      m_out_num_events = n_total;
-      m_out_num_hg     = n_hg;
-      m_out_num_lg     = n_lg;
+      m_out_num_events = gd.count;
+      m_out_num_hg     = gd.num_hg;
+
+      if (m_ignore_lg)
+        m_out_num_lg = -1;
+      else
+        m_out_num_lg = gd.num_lg;
 
       Identifier pid(pmtId);
       auto *idServ = IDService::getIdServ();
@@ -256,17 +180,21 @@ public:
       m_out_theta = pmt->getCenter().Theta();
       m_out_phi   = pmt->getCenter().Phi();
 
-      m_out_waveform.assign(mu.begin(), mu.end());
-      m_out_stddev.assign(sigma.begin(), sigma.end());
+      m_out_waveform.resize(kWfLength);
+      m_out_stddev.resize(kWfLength);
+
+      double n_inv = 1.0 / static_cast<double>(gd.count);
+      for (int i = 0; i < kWfLength; ++i) {
+        double mean = gd.sum[i] * n_inv;
+        double var  = gd.sq_sum[i] * n_inv - mean * mean;
+        m_out_waveform[i] = mean;
+        m_out_stddev[i]   = std::sqrt(std::max(0.0, var));
+      }
 
       m_tree->Fill();
     }
 
-    LogInfo << "Channels: " << all_channels.size()
-            << "  (HG-only: " << n_hg_only
-            << ", LG-only: " << n_lg_only
-            << ", both: "   << n_both << ")\n";
-
+    LogInfo << "Channels: " << m_acc.size() << '\n';
     return true;
   }
 
@@ -275,15 +203,15 @@ private:
   TTree         *m_tree{};
   CdGeom        *m_cdGeom{};
 
-  std::map<int, GainAccum> m_hg;
-  std::map<int, GainAccum> m_lg;
+  std::map<int, GainAccum> m_acc;
 
   int m_events_visited{0};
   int m_events_with_cd{0};
 
-  bool   m_enable_gain_corr{};
+  bool   m_ignore_lg{};
   double m_hg_scale{};
   double m_lg_scale{};
+  int    m_baseline_n{};
 
   int                m_out_channel_id{};
   unsigned int       m_out_copy_id{};

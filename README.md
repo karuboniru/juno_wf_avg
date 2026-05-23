@@ -50,17 +50,18 @@ python run.py --input-list files.txt
 
 | 属性 | 类型 | 默认值 | 说明 |
 |---|---|---|---|
-| `EnableGainCorrection` | bool | `true` | 是否启用 high-gain 修正 |
 | `HighGainScale` | double | `0.08` | HG scale 因子 |
 | `LowGainScale` | double | `0.55` | LG scale 因子 |
+| `BaselineSampleCount` | int | `100` | 用于基线估计的前 N 个采样点 |
+| `IgnoreLowGain` | bool | `false` | 若 `true`，跳过所有 LG channel |
 
 其中 $r = \frac{\text{HighGainScale}}{\text{LowGainScale}} \approx 0.145$ 为缩放比。
 
 在 Python 中覆盖示例：
 ```python
 alg = task.createAlg("WfAverage")
-alg.property("EnableGainCorrection").set(False)
-alg.property("HighGainScale").set(0.07)
+alg.property("BaselineSampleCount").set(200)
+alg.property("IgnoreLowGain").set(True)
 ```
 
 ### 输出 ROOT 文件
@@ -71,64 +72,51 @@ TTree `USER_OUTPUT/wf_avg`（内部名 `wf_average`），每行一个 channel：
 |---|---|---|
 | `channelId` | int | JUNO 原始 PMT 标识符 |
 | `copyId` | unsigned int | 人类友好的复制编号（0-17611） |
-| `numEvents` | int | 该 channel 出现的事件总数 (= numHG + numLG) |
+| `numEvents` | int | 该 channel 出现的事件总数 |
 | `numHG` | int | High-gain 事件数 |
-| `numLG` | int | Low-gain 事件数 |
+| `numLG` | int | Low-gain 事件数（`IgnoreLowGain=true` 时为 -1） |
 | `theta` | double | PMT 天顶角 [rad] |
 | `phi` | double | PMT 方位角 [rad] |
-| `waveform` | vector\<double\> | 平均波形（1008 个时间 bin） |
+| `waveform` | vector\<double\> | 基线归零后的平均波形（1008 个时间 bin） |
 | `stddev` | vector\<double\> | 标准差（1008 个时间 bin） |
+
+> 波形值以 0 为基线：表示相对于 pedestal 的信号幅度。HG 已被
+> scale 至与 LG 可比的幅度。
 
 ### 算法流程
 
-#### execute() — 累加阶段（不做任何修正）
+#### execute() — 逐 event 基线减除 + 内联缩放
 
 ```
 对每个 rtraw event:
   跳过没有 CdWaveformHeader 的事件
   获取 CdWaveformEvt → 遍历所有 channel:
-    若 isHighGain() → 累加原始 ADC 到 m_hg[pmtId]
-    若 isLowGain()  → 累加原始 ADC 到 m_lg[pmtId]
 
-每 1000 个 event 打印进度。
+    若 IgnoreLowGain && !isHighGain() → 跳过
+
+    baseline = mean(adc[0 .. BaselineSampleCount - 1])   ← 前 N 个采样均值
+    scale    = isHighGain() ? (HighGainScale / LowGainScale) : 1.0
+
+    对每个采样点 i ∈ [0, 1007]:
+      value = (adc[i] − baseline) × scale
+      累加 value 和 value² 到 m_acc[pmtId]
+
+  每 1000 个 event 打印进度。
 ```
 
-#### finalize() — 后处理阶段
+#### finalize() — 输出统计量
 
-对 `m_hg ∪ m_lg` 中的每个 channel：
+对 `m_acc` 中每个 channel：
 
-1. **计算各 gain band 的统计量**：从累加的 $\Sigma\mathrm{adc}$ 和 $\Sigma\mathrm{adc}^2$ 计算各 gain 的逐 bin 均值和标准差：
+1. 计算逐 bin 均值和标准差：
 
-$$\mu_{\mathrm{HG}}[i] = \frac{\Sigma\mathrm{adc}_{\mathrm{HG}}[i]}{N_{\mathrm{HG}}}, \qquad
-  \sigma_{\mathrm{HG}}[i] = \sqrt{\max\!\left(0,\;
-    \frac{\Sigma\mathrm{adc}^2_{\mathrm{HG}}[i]}{N_{\mathrm{HG}}} - \mu_{\mathrm{HG}}[i]^2
+$$\mu[i] = \frac{\Sigma v[i]}{N}, \qquad
+  \sigma[i] = \sqrt{\max\!\left(0,\;
+    \frac{\Sigma v^2[i]}{N} - \mu[i]^2
   \right)}$$
 
-   （LG 同理）。
-
-2. **High-gain 修正**（仅当 `EnableGainCorrection` 且该 channel 同时有 HG 和 LG 事件时执行）：
-
-$$\textit{baseline} = \mathrm{mode}\!\big(\lfloor\mu_{\mathrm{HG}}[i] + 0.5\rfloor\big)_{i=0}^{1007}$$
-
-$$\mu'_{\mathrm{HG}}[i] = \big(\mu_{\mathrm{HG}}[i] - \textit{baseline}\big) \cdot r + \textit{baseline}, \qquad
-  \sigma'_{\mathrm{HG}}[i] = \sigma_{\mathrm{HG}}[i] \cdot r$$
-
-   其中 $r = \dfrac{0.08}{0.55} \approx 0.145$（`HighGainScale / LowGainScale`）。
-
-3. **加权池化**（若 HG 和 LG 同时存在）：
-
-$$\begin{aligned}
-N &= N_{\mathrm{HG}} + N_{\mathrm{LG}} \\
-\mu[i] &= \frac{N_{\mathrm{HG}} \cdot \mu'_{\mathrm{HG}}[i] + N_{\mathrm{LG}} \cdot \mu_{\mathrm{LG}}[i]}{N} \\
-\sigma^2[i] &= \frac{1}{N}\Big[
-  \underbrace{N_{\mathrm{HG}} \cdot \sigma'^2_{\mathrm{HG}}[i] + N_{\mathrm{LG}} \cdot \sigma^2_{\mathrm{LG}}[i]}_{\text{组内方差}}
-  + \underbrace{N_{\mathrm{HG}}\big(\mu'_{\mathrm{HG}}[i] - \mu[i]\big)^2}_{\text{组间方差}}
-  + \underbrace{N_{\mathrm{LG}}\big(\mu_{\mathrm{LG}}[i] - \mu[i]\big)^2}_{\text{组间方差}}
-\Big] \\
-\sigma[i] &= \sqrt{\max(0,\;\sigma^2[i])}
-\end{aligned}$$
-
-   若只有单一 gain：直接输出该 gain 的原值，不应用修正。
+2. 若 `IgnoreLowGain` 启用，`numLG` 输出为 -1（哨兵值）；否则输出实际计数。
+3. 填入输出 tree。
 
 ### 关于 gain 修正
 
@@ -136,12 +124,15 @@ JUNO 电子学对 PMT 信号有两种增益范围：
 - **High-gain (HR)**: 较高放大倍数（$\approx 1 / r = 0.55 / 0.08 \approx 6.875\times$），适合小信号
 - **Low-gain (LR)**: 较低放大倍数，适合大信号
 
-不同 event 的同一 channel 可能触发不同 gain。直接混合会导致 scale 不一致。
-基线扣除-缩放方法将 HG 波形相对于 pedestal (baseline) 缩放到与 LG 一致的
-幅度尺度（乘以 $r = \frac{0.08}{0.55}$），使两者可安全地加权平均。
+**逐 event 修正策略**：对每个 channel 在每个 event 中：
+1. 取前 `BaselineSampleCount` 个采样点的均值作为该 event 的基线（pedestal estimate）
+2. 将波形减去该基线，得到信号幅度
+3. 若为 HG channel，将幅度乘以 $r = 0.08/0.55$，缩放到与 LG 一致的尺度
+4. LG channel 仅做基线减除（scale = 1.0），不做额外缩放
 
-**修正仅在有 HG+LG 混合的 channel 上生效**。若 channel 只有一种 gain，无需
-修正，原值直接输出。
+这样所有 event 的波形都以 0 为基线对齐，且 HG 与 LG 可直接混合累加。
+
+`IgnoreLowGain` 模式：若该 channel 出现的是 LG 事件，直接跳过不累加。
 
 ---
 

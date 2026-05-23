@@ -170,11 +170,19 @@ int main(int argc, char **argv) {
                     ("PMT copy #" + std::to_string(e.copy_id)).c_str());
 
     char pos_str[128];
-    std::snprintf(pos_str, sizeof(pos_str),
-                  "#theta = %.1f#circ   #phi = %.1f#circ   H=%d L=%d",
-                  e.theta * 180.0 / M_PI,
-                  e.phi * 180.0 / M_PI,
-                  e.num_hg, e.num_lg);
+    if (e.num_lg == -1) {
+      std::snprintf(pos_str, sizeof(pos_str),
+                    "#theta = %.1f#circ   #phi = %.1f#circ   H=%d, LG removed",
+                    e.theta * 180.0 / M_PI,
+                    e.phi * 180.0 / M_PI,
+                    e.num_hg);
+    } else {
+      std::snprintf(pos_str, sizeof(pos_str),
+                    "#theta = %.1f#circ   #phi = %.1f#circ   H=%d L=%d",
+                    e.theta * 180.0 / M_PI,
+                    e.phi * 180.0 / M_PI,
+                    e.num_hg, e.num_lg);
+    }
     latex.SetTextAlign(32);
     latex.DrawLatex(0.86, 0.92, pos_str);
 
