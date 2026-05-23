@@ -18,15 +18,35 @@
 
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <map>
 #include <vector>
 
 static constexpr int kWfLength = 1008;
 
+static double find_baseline(const std::vector<std::uint16_t> &adc) {
+  std::map<std::uint16_t, int> counts;
+  for (auto v : adc)
+    ++counts[v];
+  std::uint16_t peak = 0;
+  int max_count = 0;
+  for (const auto &[val, cnt] : counts) {
+    if (cnt > max_count) {
+      max_count = cnt;
+      peak = val;
+    }
+  }
+  return static_cast<double>(peak);
+}
+
 class WfAverage final : public AlgBase {
 public:
-  WfAverage(const std::string &name) : AlgBase(name) {}
+  WfAverage(const std::string &name) : AlgBase(name) {
+    declProp("EnableGainCorrection", m_enable_gain_corr = true);
+    declProp("HighGainScale", m_hg_scale = 0.08);
+    declProp("LowGainScale", m_lg_scale = 0.55);
+  }
 
   WfAverage(WfAverage &&) = delete;
   WfAverage(const WfAverage &) = delete;
@@ -94,13 +114,23 @@ public:
         std::abort();
       }
 
+      std::vector<double> adc_d(kWfLength);
+      if (m_enable_gain_corr && waveform->isHighGain()) {
+        double baseline = find_baseline(adc);
+        double ratio    = m_hg_scale / m_lg_scale;
+        for (int i = 0; i < kWfLength; ++i)
+          adc_d[i] = (static_cast<double>(adc[i]) - baseline) * ratio + baseline;
+      } else {
+        for (int i = 0; i < kWfLength; ++i)
+          adc_d[i] = static_cast<double>(adc[i]);
+      }
+
       auto &sum = m_sum[pmtId];
       auto &sq  = m_sq_sum[pmtId];
 
       for (int i = 0; i < kWfLength; ++i) {
-        double v = static_cast<double>(adc[i]);
-        sum[i] += v;
-        sq[i]  += v * v;
+        sum[i] += adc_d[i];
+        sq[i]  += adc_d[i] * adc_d[i];
       }
       ++m_count[pmtId];
     }
@@ -159,6 +189,10 @@ private:
   std::map<int, int>                            m_count;
 
   int m_events_processed{0};
+
+  bool   m_enable_gain_corr{};
+  double m_hg_scale{};
+  double m_lg_scale{};
 
   int                m_out_channel_id{};
   unsigned int       m_out_copy_id{};
