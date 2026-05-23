@@ -116,8 +116,15 @@ public:
 
       std::vector<double> adc_d(kWfLength);
       if (m_enable_gain_corr && waveform->isHighGain()) {
-        double baseline = find_baseline(adc);
-        double ratio    = m_hg_scale / m_lg_scale;
+        auto it = m_baseline_cache.find(pmtId);
+        double baseline;
+        if (it != m_baseline_cache.end()) {
+          baseline = it->second;
+        } else {
+          baseline = find_baseline(adc);
+          m_baseline_cache[pmtId] = baseline;
+        }
+        double ratio = m_hg_scale / m_lg_scale;
         for (int i = 0; i < kWfLength; ++i)
           adc_d[i] = (static_cast<double>(adc[i]) - baseline) * ratio + baseline;
       } else {
@@ -187,6 +194,7 @@ private:
   std::map<int, std::array<double, kWfLength>> m_sum;
   std::map<int, std::array<double, kWfLength>> m_sq_sum;
   std::map<int, int>                            m_count;
+  std::map<int, double>                         m_baseline_cache;
 
   int m_events_processed{0};
 
