@@ -54,6 +54,8 @@ python run.py --input-list files.txt
 | `HighGainScale` | double | `0.08` | HG scale 因子 |
 | `LowGainScale` | double | `0.55` | LG scale 因子 |
 
+其中 $r = \frac{\text{HighGainScale}}{\text{LowGainScale}} \approx 0.145$ 为缩放比。
+
 在 Python 中覆盖示例：
 ```python
 alg = task.createAlg("WfAverage")
@@ -95,38 +97,48 @@ TTree `USER_OUTPUT/wf_avg`（内部名 `wf_average`），每行一个 channel：
 
 对 `m_hg ∪ m_lg` 中的每个 channel：
 
-1. **计算各 gain band 的统计量**：从累加的 Σadc 和 Σadc² 计算 μ_hg、σ_hg（以及 μ_lg、σ_lg）
+1. **计算各 gain band 的统计量**：从累加的 $\Sigma\mathrm{adc}$ 和 $\Sigma\mathrm{adc}^2$ 计算各 gain 的逐 bin 均值和标准差：
+
+$$\mu_{\mathrm{HG}}[i] = \frac{\Sigma\mathrm{adc}_{\mathrm{HG}}[i]}{N_{\mathrm{HG}}}, \qquad
+  \sigma_{\mathrm{HG}}[i] = \sqrt{\max\!\left(0,\;
+    \frac{\Sigma\mathrm{adc}^2_{\mathrm{HG}}[i]}{N_{\mathrm{HG}}} - \mu_{\mathrm{HG}}[i]^2
+  \right)}$$
+
+   （LG 同理）。
 
 2. **High-gain 修正**（仅当 `EnableGainCorrection` 且该 channel 同时有 HG 和 LG 事件时执行）：
-   - 对 μ_hg[0..1007] 取众数（rounded mode）→ baseline
-   - `μ_hg'[i] = (μ_hg[i] − baseline) × ratio + baseline`
-   - `σ_hg'[i] = σ_hg[i] × ratio`
-   - 其中 `ratio = HighGainScale / LowGainScale` (默认 0.08/0.55 ≈ 0.145)
+
+$$\textit{baseline} = \mathrm{mode}\!\big(\lfloor\mu_{\mathrm{HG}}[i] + 0.5\rfloor\big)_{i=0}^{1007}$$
+
+$$\mu'_{\mathrm{HG}}[i] = \big(\mu_{\mathrm{HG}}[i] - \textit{baseline}\big) \cdot r + \textit{baseline}, \qquad
+  \sigma'_{\mathrm{HG}}[i] = \sigma_{\mathrm{HG}}[i] \cdot r$$
+
+   其中 $r = \dfrac{0.08}{0.55} \approx 0.145$（`HighGainScale / LowGainScale`）。
 
 3. **加权池化**（若 HG 和 LG 同时存在）：
 
-   ```
-   N = N_hg + N_lg
-   μ[i] = (N_hg · μ_hg'[i] + N_lg · μ_lg[i]) / N
-
-   σ²[i] = [ N_hg · σ_hg'²[i] + N_lg · σ_lg²[i]           ← 组内方差
-            + N_hg · (μ_hg'[i] − μ[i])²                    ← 组间方差
-            + N_lg · (μ_lg[i] − μ[i])² ] / N
-
-   σ[i] = √σ²[i]
-   ```
+$$\begin{aligned}
+N &= N_{\mathrm{HG}} + N_{\mathrm{LG}} \\
+\mu[i] &= \frac{N_{\mathrm{HG}} \cdot \mu'_{\mathrm{HG}}[i] + N_{\mathrm{LG}} \cdot \mu_{\mathrm{LG}}[i]}{N} \\
+\sigma^2[i] &= \frac{1}{N}\Big[
+  \underbrace{N_{\mathrm{HG}} \cdot \sigma'^2_{\mathrm{HG}}[i] + N_{\mathrm{LG}} \cdot \sigma^2_{\mathrm{LG}}[i]}_{\text{组内方差}}
+  + \underbrace{N_{\mathrm{HG}}\big(\mu'_{\mathrm{HG}}[i] - \mu[i]\big)^2}_{\text{组间方差}}
+  + \underbrace{N_{\mathrm{LG}}\big(\mu_{\mathrm{LG}}[i] - \mu[i]\big)^2}_{\text{组间方差}}
+\Big] \\
+\sigma[i] &= \sqrt{\max(0,\;\sigma^2[i])}
+\end{aligned}$$
 
    若只有单一 gain：直接输出该 gain 的原值，不应用修正。
 
 ### 关于 gain 修正
 
 JUNO 电子学对 PMT 信号有两种增益范围：
-- **High-gain (HR)**: 较高放大倍数 (~6.875×)，适合小信号
+- **High-gain (HR)**: 较高放大倍数（$\approx 1 / r = 0.55 / 0.08 \approx 6.875\times$），适合小信号
 - **Low-gain (LR)**: 较低放大倍数，适合大信号
 
 不同 event 的同一 channel 可能触发不同 gain。直接混合会导致 scale 不一致。
 基线扣除-缩放方法将 HG 波形相对于 pedestal (baseline) 缩放到与 LG 一致的
-幅度尺度，使两者可安全地加权平均。
+幅度尺度（乘以 $r = \frac{0.08}{0.55}$），使两者可安全地加权平均。
 
 **修正仅在有 HG+LG 混合的 channel 上生效**。若 channel 只有一种 gain，无需
 修正，原值直接输出。
