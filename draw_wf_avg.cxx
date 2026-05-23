@@ -19,6 +19,8 @@ struct Entry {
   int channel_id;
   unsigned int copy_id;
   int num_events;
+  int num_hg;
+  int num_lg;
   double theta;
   double phi;
   std::vector<double> waveform;
@@ -46,7 +48,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  int    channel_id, num_events;
+  int    channel_id, num_events, num_hg, num_lg;
   unsigned int copy_id;
   double theta, phi;
   std::vector<double> *waveform = nullptr;
@@ -55,6 +57,8 @@ int main(int argc, char **argv) {
   t->SetBranchAddress("channelId", &channel_id);
   t->SetBranchAddress("copyId",    &copy_id);
   t->SetBranchAddress("numEvents", &num_events);
+  t->SetBranchAddress("numHG",     &num_hg);
+  t->SetBranchAddress("numLG",     &num_lg);
   t->SetBranchAddress("theta",     &theta);
   t->SetBranchAddress("phi",       &phi);
   t->SetBranchAddress("waveform",  &waveform);
@@ -65,8 +69,8 @@ int main(int argc, char **argv) {
 
   for (Long64_t i = 0; i < t->GetEntries(); ++i) {
     t->GetEntry(i);
-    entries.push_back({channel_id, copy_id, num_events, theta, phi,
-                       *waveform, *stddev});
+    entries.push_back({channel_id, copy_id, num_events, num_hg, num_lg,
+                       theta, phi, *waveform, *stddev});
   }
   f.Close();
 
@@ -167,10 +171,10 @@ int main(int argc, char **argv) {
 
     char pos_str[128];
     std::snprintf(pos_str, sizeof(pos_str),
-                  "#theta = %.1f#circ   #phi = %.1f#circ   events = %d",
+                  "#theta = %.1f#circ   #phi = %.1f#circ   H=%d L=%d",
                   e.theta * 180.0 / M_PI,
                   e.phi * 180.0 / M_PI,
-                  e.num_events);
+                  e.num_hg, e.num_lg);
     latex.SetTextAlign(32);
     latex.DrawLatex(0.86, 0.92, pos_str);
 

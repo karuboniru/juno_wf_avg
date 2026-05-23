@@ -82,6 +82,8 @@ public:
     m_tree->Branch("channelId", &m_out_channel_id);
     m_tree->Branch("copyId",    &m_out_copy_id);
     m_tree->Branch("numEvents", &m_out_num_events);
+    m_tree->Branch("numHG",     &m_out_num_hg);
+    m_tree->Branch("numLG",     &m_out_num_lg);
     m_tree->Branch("theta",     &m_out_theta);
     m_tree->Branch("phi",       &m_out_phi);
     m_tree->Branch("waveform", &m_out_waveform);
@@ -240,6 +242,8 @@ public:
       // ── fill output ──
       m_out_channel_id = pmtId;
       m_out_num_events = n_total;
+      m_out_num_hg     = n_hg;
+      m_out_num_lg     = n_lg;
 
       Identifier pid(pmtId);
       auto *idServ = IDService::getIdServ();
@@ -284,6 +288,8 @@ private:
   int                m_out_channel_id{};
   unsigned int       m_out_copy_id{};
   int                m_out_num_events{};
+  int                m_out_num_hg{};
+  int                m_out_num_lg{};
   double             m_out_theta{};
   double             m_out_phi{};
   std::vector<double> m_out_waveform;
