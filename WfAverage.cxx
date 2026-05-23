@@ -208,7 +208,7 @@ public:
       }
 
       // ── high-gain correction (if enabled) ──
-      if (m_enable_gain_corr && n_hg > 0) {
+      if (m_enable_gain_corr && n_hg > 0 && n_lg > 0) {
         double baseline = find_baseline(mu_hg);
         for (int i = 0; i < kWfLength; ++i) {
           mu_hg[i]    = (mu_hg[i] - baseline) * ratio + baseline;
