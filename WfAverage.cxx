@@ -1,3 +1,4 @@
+#include <Event/CdTriggerHeader.h>
 #include <Event/CdWaveformEvt.h>
 #include <Event/CdWaveformHeader.h>
 #include <EvtNavigator/EvtNavHelper.h>
@@ -23,6 +24,7 @@
 #include <limits>
 #include <map>
 #include <numeric>
+#include <string>
 #include <vector>
 
 static constexpr int kWfLength = 1008;
@@ -44,6 +46,7 @@ public:
     declProp("LowGainScale", m_lg_scale = 0.55);
     declProp("BaselineSampleCount", m_baseline_n = 100);
     declProp("IgnoreLowGain", m_ignore_lg = false);
+    declProp("TriggerTypeFilter", m_trig_filter = std::string{});
     declProp("TimeAlign", m_time_align = false);
     declProp("SkipOnMissingRef", m_skip_on_missing = true);
   }
@@ -126,6 +129,15 @@ public:
     if (!evt) return true;
 
     ++m_events_with_cd;
+
+    if (!m_trig_filter.empty()) {
+      bool matched = false;
+      if (auto trig_hdr = JM::getHeaderObject<JM::CdTriggerHeader>(nav))
+        if (trig_hdr->hasEvent())
+          for (const auto &t : trig_hdr->event()->triggerType())
+            if (t == m_trig_filter) { matched = true; break; }
+      if (!matched) return true;
+    }
 
     const auto &channels = evt->channelData();
     const double ratio = m_hg_scale / m_lg_scale;
@@ -317,6 +329,7 @@ private:
   double m_hg_scale{};
   double m_lg_scale{};
   int    m_baseline_n{};
+  std::string m_trig_filter{};
 
   bool m_time_align{};
   bool m_skip_on_missing{};
