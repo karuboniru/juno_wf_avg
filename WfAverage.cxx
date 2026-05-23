@@ -94,14 +94,23 @@ public:
   }
 
   bool execute() final {
+    ++m_events_visited;
+
     auto *nav = m_buf->curEvt();
     if (!nav) return true;
 
     auto hdr = JM::getHeaderObject<JM::CdWaveformHeader>(nav);
-    if (!hdr || !hdr->hasEvent()) return true;
+    if (!(hdr && hdr->hasEvent())) {
+      if (m_events_visited % 1000 == 0)
+        LogInfo << "processed " << m_events_visited
+                << " events (" << m_events_with_cd << " with CD waveform)" << '\n';
+      return true;
+    }
 
     auto *evt = dynamic_cast<JM::CdWaveformEvt *>(hdr->event());
     if (!evt) return true;
+
+    ++m_events_with_cd;
 
     const auto &channels = evt->channelData();
 
@@ -142,13 +151,12 @@ public:
       ++m_count[pmtId];
     }
 
-    ++m_events_processed;
     return true;
   }
 
   bool finalize() final {
-    LogInfo << "WfAverage::finalize — events with CD waveform: "
-            << m_events_processed << '\n';
+    LogInfo << "WfAverage::finalize — events visited: " << m_events_visited
+            << ", with CD waveform: " << m_events_with_cd << '\n';
     LogInfo << "Channels with waveform data: " << m_count.size() << '\n';
 
     for (const auto &[pmtId, n] : m_count) {
@@ -196,7 +204,8 @@ private:
   std::map<int, int>                            m_count;
   std::map<int, double>                         m_baseline_cache;
 
-  int m_events_processed{0};
+  int m_events_visited{0};
+  int m_events_with_cd{0};
 
   bool   m_enable_gain_corr{};
   double m_hg_scale{};
