@@ -25,6 +25,7 @@ struct Entry {
   int num_events;
   int num_hg;
   int num_lg;
+  bool is_nnvt;
   double theta;
   double phi;
   std::vector<double> waveform;
@@ -77,6 +78,7 @@ int main(int argc, char **argv) {
 
   int    channel_id, num_events, num_hg, num_lg;
   unsigned int copy_id;
+  bool is_nnvt;
   double theta, phi;
   std::vector<double> *waveform = nullptr;
   std::vector<double> *stddev   = nullptr;
@@ -88,6 +90,7 @@ int main(int argc, char **argv) {
   t->SetBranchAddress("numLG",     &num_lg);
   t->SetBranchAddress("theta",     &theta);
   t->SetBranchAddress("phi",       &phi);
+  t->SetBranchAddress("isNNVT",    &is_nnvt);
   t->SetBranchAddress("waveform",  &waveform);
   t->SetBranchAddress("stddev",    &stddev);
 
@@ -97,7 +100,7 @@ int main(int argc, char **argv) {
   for (Long64_t i = 0; i < t->GetEntries(); ++i) {
     t->GetEntry(i);
     entries.push_back({channel_id, copy_id, num_events, num_hg, num_lg,
-                       theta, phi, *waveform, *stddev});
+                       is_nnvt, theta, phi, *waveform, *stddev});
   }
   f.Close();
 
@@ -200,7 +203,8 @@ int main(int argc, char **argv) {
 
     latex.SetTextAlign(12);
     latex.DrawLatex(0.14, 0.92,
-                    ("PMT copy #" + std::to_string(e.copy_id)).c_str());
+                    ("PMT copy #" + std::to_string(e.copy_id)
+                     + " (" + (e.is_nnvt ? "N" : "H") + ")").c_str());
 
     char pos_str[128];
     if (e.num_lg == -1) {

@@ -4,6 +4,7 @@
 #include <EvtNavigator/EvtNavigator.h>
 #include <EvtNavigator/NavBuffer.h>
 #include <Geometry/CdGeom.h>
+#include <Geometry/IPMTParamSvc.h>
 #include <Geometry/IRecGeomSvc.hh>
 #include <Geometry/PmtGeom.h>
 #include <Identifier/IDService.h>
@@ -70,6 +71,7 @@ public:
     m_tree->Branch("numLG",     &m_out_num_lg);
     m_tree->Branch("theta",     &m_out_theta);
     m_tree->Branch("phi",       &m_out_phi);
+    m_tree->Branch("isNNVT",    &m_out_is_nnvt);
     m_tree->Branch("waveform", &m_out_waveform);
     m_tree->Branch("stddev",   &m_out_stddev);
 
@@ -89,6 +91,13 @@ public:
 
     IDService *idServ = IDService::getIdServ();
     idServ->init();
+
+    SniperPtr<IPMTParamSvc> pmtSvc(getParent(), "PMTParamSvc");
+    if (pmtSvc.invalid()) {
+      LogError << "Failed to get PMTParamSvc" << '\n';
+      return false;
+    }
+    m_pmt_svc = pmtSvc.data();
 
     return true;
   }
@@ -172,6 +181,7 @@ public:
       Identifier pid(pmtId);
       auto *idServ = IDService::getIdServ();
       m_out_copy_id = idServ->id2CopyNo(pid);
+      m_out_is_nnvt = m_pmt_svc->isNNVT(m_out_copy_id);
       auto *pmt = m_cdGeom->getPmt(pid);
       if (!pmt) {
         LogFatal << "Failed to get PMT geometry for channel " << pmtId << '\n';
@@ -202,6 +212,7 @@ private:
   JM::NavBuffer *m_buf{};
   TTree         *m_tree{};
   CdGeom        *m_cdGeom{};
+  IPMTParamSvc  *m_pmt_svc{};
 
   std::map<int, GainAccum> m_acc;
 
@@ -220,6 +231,7 @@ private:
   int                m_out_num_lg{};
   double             m_out_theta{};
   double             m_out_phi{};
+  bool               m_out_is_nnvt{};
   std::vector<double> m_out_waveform;
   std::vector<double> m_out_stddev;
 };
