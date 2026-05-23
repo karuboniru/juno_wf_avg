@@ -9,11 +9,15 @@
 #include <TStyle.h>
 #include <TMath.h>
 
+#include <boost/program_options.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <string>
 #include <vector>
+
+namespace po = boost::program_options;
 
 struct Entry {
   int channel_id;
@@ -33,15 +37,38 @@ struct SelectedEntry {
 };
 
 int main(int argc, char **argv) {
-  const char *input_file  = (argc > 1) ? argv[1] : "wf_avg.root";
-  const char *output_file = (argc > 2) ? argv[2] : "wf_avg_plots.pdf";
-  int max_per_group       = (argc > 3) ? std::stoi(argv[3]) : 10;
+  std::string input_file  = "wf_avg.root";
+  std::string output_file = "wf_avg_plots.pdf";
+  int max_per_group       = 10;
+  bool no_band            = false;
+
+  po::options_description desc("Options");
+  desc.add_options()
+    ("help,h", "print help")
+    ("input,i", po::value<std::string>(&input_file)->default_value("wf_avg.root"),
+     "input ROOT file")
+    ("output,o", po::value<std::string>(&output_file)->default_value("wf_avg_plots.pdf"),
+     "output PDF file")
+    ("max-per-group,n", po::value<int>(&max_per_group)->default_value(10),
+     "max channels per theta group")
+    ("no-band", po::bool_switch(&no_band)->default_value(false),
+     "disable ±1σ confidence band");
+
+  po::variables_map vm;
+  po::store(po::parse_command_line(argc, argv, desc), vm);
+  po::notify(vm);
+
+  if (vm.count("help")) {
+    std::cout << desc << '\n';
+    return 0;
+  }
+  bool draw_band = !no_band;
 
   gROOT->SetBatch(true);
   gStyle->SetOptStat(0);
   gStyle->SetOptTitle(0);
 
-  TFile f(input_file);
+  TFile f(input_file.c_str());
   auto *t = (TTree *)f.Get("wf_avg");
   if (!t) {
     std::cerr << "Tree 'wf_avg' not found in " << input_file << '\n';
@@ -128,11 +155,24 @@ int main(int argc, char **argv) {
     for (int j = 0; j < nsamples; ++j) {
       x[j] = j;
       wf[j] = e.waveform[j];
-      double s = e.stddev[j];
-      sd_upper[j] = wf[j] + s;
-      sd_lower[j] = wf[j] - s;
-      if (sd_lower[j] < y_min) y_min = sd_lower[j];
-      if (sd_upper[j] > y_max) y_max = sd_upper[j];
+      if (wf[j] < y_min) y_min = wf[j];
+      if (wf[j] > y_max) y_max = wf[j];
+    }
+
+    TGraph g_band;
+    if (draw_band) {
+      g_band.Set(nsamples * 2);
+      for (int j = 0; j < nsamples; ++j) {
+        double s = e.stddev[j];
+        sd_lower[j] = wf[j] - s;
+        sd_upper[j] = wf[j] + s;
+        g_band.SetPoint(j, x[j], sd_lower[j]);
+        g_band.SetPoint(nsamples * 2 - 1 - j, x[j], sd_upper[j]);
+        if (sd_lower[j] < y_min) y_min = sd_lower[j];
+        if (sd_upper[j] > y_max) y_max = sd_upper[j];
+      }
+      g_band.SetFillColorAlpha(kGray, 0.35);
+      g_band.SetLineWidth(0);
     }
 
     double margin = (y_max - y_min) * 0.05;
@@ -143,14 +183,6 @@ int main(int argc, char **argv) {
     g_wf.SetLineColor(kBlue);
     g_wf.SetLineWidth(2);
 
-    TGraph g_band(nsamples * 2);
-    for (int j = 0; j < nsamples; ++j) {
-      g_band.SetPoint(j, x[j], sd_lower[j]);
-      g_band.SetPoint(nsamples * 2 - 1 - j, x[j], sd_upper[j]);
-    }
-    g_band.SetFillColorAlpha(kGray, 0.35);
-    g_band.SetLineWidth(0);
-
     c.cd();
 
     TH1F *hframe = c.DrawFrame(0, y_min, nsamples - 1, y_max);
@@ -158,7 +190,8 @@ int main(int argc, char **argv) {
     hframe->GetYaxis()->SetTitle("ADC count");
     hframe->GetYaxis()->SetTitleOffset(1.4);
 
-    g_band.Draw("f same");
+    if (draw_band)
+      g_band.Draw("f same");
     g_wf.Draw("l same");
 
     TLatex latex;
@@ -192,10 +225,10 @@ int main(int argc, char **argv) {
     latex.DrawLatex(0.5, 0.5, ("#theta group: " + std::string(tnames[group_tag])).c_str());
 
     if (first_page) {
-      c.Print((std::string(output_file) + "(").c_str(), "pdf");
+      c.Print((output_file + "(").c_str(), "pdf");
       first_page = false;
     } else {
-      c.Print(output_file, "pdf");
+      c.Print(output_file.c_str(), "pdf");
     }
 
     if ((i + 1) % 20 == 0)
@@ -203,7 +236,7 @@ int main(int argc, char **argv) {
   }
 
   if (!first_page)
-    c.Print((std::string(output_file) + ")").c_str(), "pdf");
+    c.Print((output_file + ")").c_str(), "pdf");
 
   std::cout << "Done: " << selected.size() << " pages -> " << output_file << '\n';
   return 0;

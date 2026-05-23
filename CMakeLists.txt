@@ -17,6 +17,7 @@ target_link_libraries(WfAverage
 )
 
 add_executable(draw_wf_avg draw_wf_avg.cxx)
+find_package(Boost REQUIRED COMPONENTS program_options)
 target_link_libraries(draw_wf_avg
   ROOT::Core
   ROOT::RIO
@@ -24,4 +25,5 @@ target_link_libraries(draw_wf_avg
   ROOT::Hist
   ROOT::Graf
   ROOT::Gpad
+  Boost::program_options
 )
