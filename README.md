@@ -117,23 +117,23 @@ $$\mu'_{\mathrm{HG}}[i] = \big(\mu_{\mathrm{HG}}[i] - \textit{baseline}\big) \cd
 
 3. **加权池化**（若 HG 和 LG 同时存在）：
 
-$$\begin{aligned}
+$$
+\begin{aligned}
 N &= N_{\mathrm{HG}} + N_{\mathrm{LG}} \\
 \mu[i] &= \frac{N_{\mathrm{HG}} \cdot \mu'_{\mathrm{HG}}[i] + N_{\mathrm{LG}} \cdot \mu_{\mathrm{LG}}[i]}{N} \\
 \sigma^2[i] &= \frac{1}{N}\Big[
-  \underbrace{N_{\mathrm{HG}} \cdot \sigma'^2_{\mathrm{HG}}[i] + N_{\mathrm{LG}} \cdot \sigma^2_{\mathrm{LG}}[i]}_{\text{组内方差}}
-  + \underbrace{N_{\mathrm{HG}}\big(\mu'_{\mathrm{HG}}[i] - \mu[i]\big)^2}_{\text{组间方差}}
-  + \underbrace{N_{\mathrm{LG}}\big(\mu_{\mathrm{LG}}[i] - \mu[i]\big)^2}_{\text{组间方差}}
+  \underbrace{N_{\mathrm{HG}} \cdot \sigma'^2_{\mathrm{HG}}[i] + N_{\mathrm{LG}} \cdot \sigma^2_{\mathrm{LG}}[i]}_{\text{组内方差}}+ \underbrace{N_{\mathrm{HG}}\big(\mu'_{\mathrm{HG}}[i] - \mu[i]\big)^2}_{\text{组间方差}} + \underbrace{N_{\mathrm{LG}}\big(\mu_{\mathrm{LG}}[i] - \mu[i]\big)^2}_{\text{组间方差}}
 \Big] \\
 \sigma[i] &= \sqrt{\max(0,\;\sigma^2[i])}
-\end{aligned}$$
+\end{aligned}
+$$
 
    若只有单一 gain：直接输出该 gain 的原值，不应用修正。
 
 ### 关于 gain 修正
 
 JUNO 电子学对 PMT 信号有两种增益范围：
-- **High-gain (HR)**: 较高放大倍数（$\approx 1 / r = 0.55 / 0.08 \approx 6.875\times$），适合小信号
+- **High-gain (HR)**: 较高放大倍数（ $\approx 1 / r = 0.55 / 0.08 \approx 6.875\times$ ），适合小信号
 - **Low-gain (LR)**: 较低放大倍数，适合大信号
 
 不同 event 的同一 channel 可能触发不同 gain。直接混合会导致 scale 不一致。
