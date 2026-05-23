@@ -18,6 +18,10 @@ def get_parser():
                         help="output ROOT file")
     parser.add_argument("--time-align", action="store_true", default=False,
                         help="enable trigger time alignment via Hamamatsu ref channel")
+    parser.add_argument("--ignore-low-gain", action="store_true", default=False,
+                        help="skip low-gain events entirely")
+    parser.add_argument("--trigger-type", default=None,
+                        help="filter events by CdTrigger type (e.g. Calibration)")
     parser.add_argument("--no-skip-missing-ref", action="store_true", default=False,
                         help="process events with delta_t=0 when ref channel absent "
                              "(default: skip)")
@@ -56,7 +60,10 @@ def run(args):
 
     Sniper.loadDll("build/lib/libWfAverage.so")
     wfa = task.createAlg("WfAverage")
-    wfa.property("IgnoreLowGain").set(True)
+    if args.ignore_low_gain:
+        wfa.property("IgnoreLowGain").set(True)
+    if args.trigger_type:
+        wfa.property("TriggerTypeFilter").set(args.trigger_type)
     if args.time_align:
         wfa.property("TimeAlign").set(True)
     if args.no_skip_missing_ref:
