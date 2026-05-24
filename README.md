@@ -112,14 +112,18 @@ TTree `USER_OUTPUT/wf_avg`（内部名 `wf_average`），每行一个 channel：
       value = (adc[i] − baseline) × scale
       累加 value 和 value² 到 m_acc[pmtId]
 
-  每 1000 个 event 打印进度。
+   若 TriggerTypeFilter 非空，则额外过滤不匹配的事件。
+
+   每 1000 个 event 打印进度。
+   维护全局计数器 m_total_trigger_events（用于最终求平均的分母）。
 ```
 
 #### finalize() — 输出统计量
 
 对 `m_acc` 中每个 channel：
 
-1. 计算逐 bin 均值和标准差：
+1. 计算逐 bin 均值和标准差，其中分母 $N$ 为所有满足 trigger 过滤条件且含 CD 波形
+   的事件总数（`m_total_trigger_events`），而非该 channel 出现的次数：
 
 $$\mu[i] = \frac{\Sigma v[i]}{N}, \qquad
   \sigma[i] = \sqrt{\max\!\left(0,\;
