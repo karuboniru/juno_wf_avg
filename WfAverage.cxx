@@ -138,6 +138,7 @@ public:
     if (!evt) return true;
 
     ++m_events_with_cd;
+    ++m_total_trigger_events;
 
     const auto &channels = evt->channelData();
     const double ratio = m_hg_scale / m_lg_scale;
@@ -267,7 +268,8 @@ public:
 
   bool finalize() final {
     LogInfo << "WfAverage::finalize — events visited: " << m_events_visited
-            << ", with CD waveform: " << m_events_with_cd;
+            << ", with CD waveform: " << m_events_with_cd
+            << ", trigger events: " << m_total_trigger_events;
     if (m_time_align)
       LogInfo << " [time-align: ref_chan=" << m_ref_channel
               << " ref_peak=" << m_ref_peak_time
@@ -299,7 +301,7 @@ public:
       m_out_waveform.resize(kWfLength);
       m_out_stddev.resize(kWfLength);
 
-      double n_inv = 1.0 / static_cast<double>(gd.count);
+      double n_inv = 1.0 / static_cast<double>(m_total_trigger_events);
       for (int i = 0; i < kWfLength; ++i) {
         double mean = gd.sum[i] * n_inv;
         double var  = gd.sq_sum[i] * n_inv - mean * mean;
@@ -324,6 +326,7 @@ private:
 
   int m_events_visited{0};
   int m_events_with_cd{0};
+  int m_total_trigger_events{0};
 
   bool   m_ignore_lg{};
   double m_hg_scale{};
