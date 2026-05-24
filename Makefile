@@ -15,6 +15,8 @@ TRIGGER   ?= global_trigger
 EVTMAX    ?= -1
 
 BUILD_DIR    = build
+LIB_WFA      = $(BUILD_DIR)/lib/libWfAverage.so
+DRAW_EXE     = $(BUILD_DIR)/bin/draw_wf_avg.exe
 LIST_FILE    = $(OUT)/$(RUN).list
 ROOT_FILE    = $(OUT)/wf_avg_$(RUN).root
 PLOT_FILE    = $(OUT)/wf_avg_$(RUN)_plots.pdf
@@ -50,21 +52,21 @@ $(LIST_FILE): gen_run_list.sh | check_run
 build_list: check_run $(LIST_FILE)
 
 # ---- Waveform averaging ----
-$(ROOT_FILE): $(LIST_FILE) run.py WfAverage.cxx | build
+$(ROOT_FILE): $(LIST_FILE) run.py WfAverage.cxx $(LIB_WFA)
 	python run.py --input-list $(LIST_FILE) --evtmax $(EVTMAX) \
 		--user-output $(ROOT_FILE) $(ANA_OPT)
 
 analysis: check_run $(ROOT_FILE)
 
 # ---- Plotting (with ±1σ band) ----
-$(PLOT_FILE): $(ROOT_FILE) | build
-	$(BUILD_DIR)/bin/draw_wf_avg.exe --input $(ROOT_FILE) --output $(PLOT_FILE)
+$(PLOT_FILE): $(ROOT_FILE) $(DRAW_EXE)
+	$(DRAW_EXE) --input $(ROOT_FILE) --output $(PLOT_FILE)
 
 plot: check_run $(PLOT_FILE)
 
 # ---- Plotting (no band) ----
-$(PLOT_NOBAND): $(ROOT_FILE) | build
-	$(BUILD_DIR)/bin/draw_wf_avg.exe --input $(ROOT_FILE) --output $(PLOT_NOBAND) --no-band
+$(PLOT_NOBAND): $(ROOT_FILE) $(DRAW_EXE)
+	$(DRAW_EXE) --input $(ROOT_FILE) --output $(PLOT_NOBAND) --no-band
 
 plot_no_band: check_run $(PLOT_NOBAND)
 
