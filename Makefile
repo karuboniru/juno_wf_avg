@@ -25,7 +25,7 @@ PLOT_NOBAND  = $(OUT)/wf_avg_$(RUN)_noband.pdf
 all: build
 
 build:
-	cmake -B $(BUILD_DIR) -G Ninja
+	cmake -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_EXPORT_COMPILE_COMMANDS=true
 	cmake --build $(BUILD_DIR)
 
 check_run:
