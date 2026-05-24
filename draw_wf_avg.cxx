@@ -107,7 +107,7 @@ int main(int argc, char **argv) {
   constexpr double pi          = M_PI;
   constexpr double targets[]   = {0.0, pi / 4.0, pi / 2.0,
                                   3.0 * pi / 4.0, pi};
-  constexpr const char *tnames[] = {"0", "π/4", "π/2", "3π/4", "π"};
+  constexpr const char *tnames[] = {"0", "#pi/4", "#pi/2", "3#pi/4", "#pi"};
   constexpr int n_targets = sizeof(targets) / sizeof(targets[0]);
   constexpr double window = 0.1;
 
