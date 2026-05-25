@@ -48,7 +48,7 @@ python run.py --input-list files.txt                [--evtmax N] [--user-output 
 其它选项：
 | 选项 | 说明 |
 |---|---|
-| `--time-align` | 启用 trigger 时间校准（对齐 Hamamatsu HG 参考 channel） |
+| `--time-align` | 启用 trigger 时间校准（使用监控 PMT 波形消除 jitter） |
 | `--ignore-low-gain` | 跳过所有低增益事件，仅累加 HG |
 | `--trigger-type TYPE` | 按 CdTrigger 类型过滤事件（如 `Calibration`），默认不过滤 |
 | `--no-skip-missing-ref` | 当参考 channel 缺失时不跳过 event（以 `δt=0` 处理），默认跳过 |
@@ -62,7 +62,8 @@ python run.py --input-list files.txt                [--evtmax N] [--user-output 
 | `BaselineSampleCount` | int | `100` | 用于基线估计的前 N 个采样点 |
 | `IgnoreLowGain` | bool | `false` | 若 `true`，跳过所有 LG channel |
 | `TimeAlign` | bool | `false` | 若 `true`，启用 trigger 时间校准（全局时间平移对齐） |
-| `SkipOnMissingRef` | bool | `true` | `TimeAlign` 生效时，若参考 channel 不在当前 event 中则跳过该 event |
+| `SkipOnMissingRef` | bool | `true` | `TimeAlign` 生效时，若监控 PMT channel 不在当前 event 中则跳过该 event |
+| `MonitorChannel` | int | `43303` | `TimeAlign` 生效时，用于时间参考的监控 PMT channel ID |
 | `TriggerTypeFilter` | string | `""` (空) | 仅处理匹配该 trigger type 的事件；留空则不过滤 |
 
 其中 $r = \frac{\text{HighGainScale}}{\text{LowGainScale}} \approx 0.145$ 为缩放比。
@@ -154,19 +155,23 @@ JUNO 电子学对 PMT 信号有两种增益范围：
 当 `TimeAlign = true` 时，在执行求平均之前会对每个 event 进行全局时间平移，
 消除 trigger 本身的 jitter 影响：
 
-1. **首个 CD event**：在所有 Hamamatsu HG channel 中找出波形最低点
-   （电子学定义：数值最低 = 信号最大）作为参考，记录参考 channel 和峰值采样点。
-   若首个 event 中没有 Hamamatsu HG channel，则发出警告并禁用校准。
+1. **首个 CD event**：从 `/Event/CdMonitorWaveform` 中读取监控 PMT channel
+   （默认 43303，通过 `MonitorChannel` 属性配置）的波形，找到最低点
+   （电子学定义：数值最低 = 信号最大）作为参考峰值，记录该采样点位置
+   `ref_peak_time`。
 
-2. **后续 event**：查找参考 channel 的峰值时间，计算时间平移量
-   `δt = ref_peak_time − cur_peak_time`，使得当前 event 的参考 channel 峰值
-   与首个 event 严格对齐。若参考 channel 不在当前 event 中且
+2. **后续 event**：同样读取监控 PMT 的波形，找到当前 event 的峰值时间，计算
+   时间平移量 `δt = ref_peak_time − cur_peak_time`，使得每个 event 的监控 PMT
+   峰值与首个 event 严格对齐。若监控 PMT channel 不在当前 event 中且
    `SkipOnMissingRef = true`（默认），则跳过该 event；否则以 `δt = 0` 处理。
 
-3. **平移**：将所有 channel 的波形按 `δt` 整体平移。平移后超出
+3. **平移**：将所有 PMT channel 的波形按 `δt` 整体平移。平移后超出
    [0, 1007] 范围的时间 bin 丢弃，空缺位置用 0 补齐，然后进入正常的累加流程。
 
-4. 结束时报告参考 channel、参考峰值时间、因缺失参考而跳过的 event 数。
+4. 结束时报告监控 PMT channel、参考峰值时间、因缺失监控 PMT 而跳过的 event 数。
+
+> 监控 PMT 信号来自固定的标定光源（如 LED），每个 event 中形状高度重复，
+> 作为时间参考远优于不可靠的随机 LPMT 信号。
 
 
 
