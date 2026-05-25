@@ -209,13 +209,9 @@ public:
 
       int start = 0, end = kWfLength, offset = 0;
       if (m_time_align && delta_t != 0) {
-        if (delta_t > 0) {
-          end    = kWfLength - delta_t;
-          offset = delta_t;
-        } else {
-          start  = -delta_t;
-          offset = delta_t;
-        }
+        start  = std::max(0, -delta_t);
+        end    = std::min(kWfLength, kWfLength - delta_t);
+        offset = delta_t;
       }
       for (int i = start; i < end; ++i) {
         double v = (static_cast<double>(adc[i]) - baseline) * scale;
