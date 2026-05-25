@@ -31,6 +31,10 @@
 
 static constexpr int kWfLength = 1008;
 
+static inline double safe_sqrt(double x) {
+  return std::sqrt(std::max(0.0, x));
+}
+
 struct GainAccum {
   std::array<double, kWfLength> sum{};
   std::array<double, kWfLength> sq_sum{};
@@ -237,9 +241,9 @@ public:
       double dt_mean = m_delta_count > 0
           ? static_cast<double>(m_delta_sum) / m_delta_count : 0.0;
       double dt_std  = m_delta_count > 1
-          ? std::sqrt(std::max(0.0,
+          ? safe_sqrt(
               static_cast<double>(m_delta_sq_sum) / m_delta_count
-              - dt_mean * dt_mean))
+              - dt_mean * dt_mean)
           : 0.0;
       LogInfo << " [time-align: monitor_chan=" << m_monitor_channel
               << " ref_peak=" << m_ref_peak_time.value_or(-1)
@@ -263,13 +267,13 @@ public:
       auto *idServ = IDService::getIdServ();
       m_out_copy_id = idServ->id2CopyNo(pid);
       m_out_is_nnvt = m_pmt_svc->isNNVT(m_out_copy_id);
-      auto *pmt = m_cdGeom->getPmt(pid);
-      if (!pmt) {
+      if (auto *pmt = m_cdGeom->getPmt(pid); pmt) {
+        m_out_theta = pmt->getCenter().Theta();
+        m_out_phi   = pmt->getCenter().Phi();
+      } else {
         LogFatal << "Failed to get PMT geometry for channel " << pmtId << '\n';
         std::abort();
       }
-      m_out_theta = pmt->getCenter().Theta();
-      m_out_phi   = pmt->getCenter().Phi();
 
       m_out_waveform.resize(kWfLength);
       m_out_stddev.resize(kWfLength);
@@ -279,7 +283,7 @@ public:
         double mean = gd.sum[i] * n_inv;
         double var  = gd.sq_sum[i] * n_inv - mean * mean;
         m_out_waveform[i] = mean;
-        m_out_stddev[i]   = std::sqrt(std::max(0.0, var));
+        m_out_stddev[i]   = safe_sqrt(var);
       }
 
       m_tree->Fill();
