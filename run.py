@@ -23,7 +23,11 @@ def get_parser():
     parser.add_argument("--ignore-low-gain", action="store_true", default=False,
                         help="skip low-gain events entirely")
     parser.add_argument("--trigger-type", default=None,
-                        help="filter events by CdTrigger type (e.g. Calibration)")
+                        help="filter events by CdTrigger type (e.g. Calibration). "
+                             "Default: exclusive match (event must have ONLY this type)")
+    parser.add_argument("--trigger-inclusive", action="store_true", default=False,
+                        help="relax trigger filter: accept event if it contains the type "
+                             "(may have others too)")
     parser.add_argument("--no-skip-missing-ref", action="store_true", default=False,
                         help="process events with delta_t=0 when ref channel absent "
                              "(default: skip)")
@@ -66,6 +70,8 @@ def run(args):
         wfa.property("IgnoreLowGain").set(True)
     if args.trigger_type:
         wfa.property("TriggerTypeFilter").set(args.trigger_type)
+    if args.trigger_inclusive:
+        wfa.property("TriggerInclusive").set(True)
     if args.time_align:
         wfa.property("TimeAlign").set(True)
         wfa.property("MonitorChannel").set(args.monitor_channel)

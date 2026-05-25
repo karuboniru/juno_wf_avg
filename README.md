@@ -51,7 +51,8 @@ python run.py --input-list files.txt                [--evtmax N] [--user-output 
 | `--time-align` | 启用 trigger 时间校准（使用监控 PMT 波形消除 jitter） |
 | `--monitor-channel ID` | 指定监控 PMT channel ID（默认 43303） |
 | `--ignore-low-gain` | 跳过所有低增益事件，仅累加 HG |
-| `--trigger-type TYPE` | 按 CdTrigger 类型过滤事件（如 `Calibration`），默认不过滤 |
+| `--trigger-type TYPE` | 按 CdTrigger type 过滤事件（默认行为：event 有且仅有该 type） |
+| `--trigger-inclusive` | 放宽 trigger 过滤：event 包含指定 type 即可（允许同时有其他 type） |
 | `--no-skip-missing-ref` | 当参考 channel 缺失时不跳过 event（以 `δt=0` 处理），默认跳过 |
 
 ### 算法属性（可在 Python 中覆盖）
@@ -65,7 +66,8 @@ python run.py --input-list files.txt                [--evtmax N] [--user-output 
 | `TimeAlign` | bool | `false` | 若 `true`，启用 trigger 时间校准（全局时间平移对齐） |
 | `SkipOnMissingRef` | bool | `true` | `TimeAlign` 生效时，若监控 PMT channel 不在当前 event 中则跳过该 event |
 | `MonitorChannel` | int | `43303` | `TimeAlign` 生效时，用于时间参考的监控 PMT channel ID |
-| `TriggerTypeFilter` | string | `""` (空) | 仅处理匹配该 trigger type 的事件；留空则不过滤 |
+| `TriggerTypeFilter` | string | `""` (空) | 仅处理匹配该 trigger type 的事件；留空则不过滤（默认：event 有且仅有该 type） |
+| `TriggerInclusive` | bool | `false` | 若 `true`，trigger 过滤变为包含即可（event 可同时有其他 type） |
 
 其中 $r = \frac{\text{HighGainScale}}{\text{LowGainScale}} \approx 0.145$ 为缩放比。
 

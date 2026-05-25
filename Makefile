@@ -11,6 +11,7 @@
 OUT       ?= analysis
 ANA_OPT   ?= --time-align --trigger-type="Calibration"
 MONITOR_CHAN ?= 43303
+TRIGGER_INCLUSIVE ?=
 EOS_BASE  ?= /eos/juno/juno-rtraw
 JUNO_SW   ?= J25.7.1
 TRIGGER   ?= global_trigger
@@ -56,7 +57,8 @@ build_list: check_run $(LIST_FILE)
 # ---- Waveform averaging ----
 $(ROOT_FILE): $(LIST_FILE) run.py WfAverage.cxx $(LIB_WFA)
 	python run.py --input-list $(LIST_FILE) --evtmax $(EVTMAX) \
-		--user-output $(ROOT_FILE) $(ANA_OPT) --monitor-channel $(MONITOR_CHAN)
+		--user-output $(ROOT_FILE) $(ANA_OPT) --monitor-channel $(MONITOR_CHAN) \
+		$(if $(TRIGGER_INCLUSIVE),--trigger-inclusive)
 
 analysis: check_run $(ROOT_FILE)
 

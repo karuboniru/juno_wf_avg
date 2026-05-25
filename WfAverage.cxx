@@ -48,6 +48,7 @@ public:
     declProp("BaselineSampleCount", m_baseline_n = 100);
     declProp("IgnoreLowGain", m_ignore_lg = false);
     declProp("TriggerTypeFilter", m_trig_filter = std::string{});
+    declProp("TriggerInclusive", m_trigger_inclusive = false);
     declProp("TimeAlign", m_time_align = false);
     declProp("SkipOnMissingRef", m_skip_on_missing = true);
     declProp("MonitorChannel", m_monitor_channel = 43303);
@@ -121,9 +122,15 @@ public:
     if (!m_trig_filter.empty()) {
       bool matched = false;
       if (auto trig_hdr = JM::getHeaderObject<JM::CdTriggerHeader>(nav))
-        if (trig_hdr->hasEvent())
-          for (const auto &t : trig_hdr->event()->triggerType())
-            if (t == m_trig_filter) { matched = true; break; }
+        if (trig_hdr->hasEvent()) {
+          const auto &types = trig_hdr->event()->triggerType();
+          if (m_trigger_inclusive) {
+            for (const auto &t : types)
+              if (t == m_trig_filter) { matched = true; break; }
+          } else {
+            matched = (types.size() == 1 && types[0] == m_trig_filter);
+          }
+        }
       if (!matched) return true;
     }
 
@@ -300,8 +307,9 @@ private:
   int m_events_with_cd{0};
   int m_total_trigger_events{0};
 
-  bool   m_ignore_lg{};
-  double m_hg_scale{};
+  bool        m_ignore_lg{};
+  bool        m_trigger_inclusive{};
+  double      m_hg_scale{};
   double m_lg_scale{};
   int    m_baseline_n{};
   std::string m_trig_filter{};
