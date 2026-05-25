@@ -180,8 +180,12 @@ public:
                   m_first_event_done = true;
                 }
               } else {
-                if (cur_peak_idx >= 0)
+                if (cur_peak_idx >= 0) {
                   delta_t = m_ref_peak_time - cur_peak_idx;
+                  m_delta_sum += delta_t;
+                  m_delta_sq_sum += delta_t * delta_t;
+                  ++m_delta_count;
+                }
               }
             }
           } else {
@@ -249,10 +253,20 @@ public:
     LogInfo << "WfAverage::finalize — events visited: " << m_events_visited
             << ", with CD waveform: " << m_events_with_cd
             << ", trigger events: " << m_total_trigger_events;
-    if (m_time_align)
+    if (m_time_align) {
+      double dt_mean = m_delta_count > 0
+          ? static_cast<double>(m_delta_sum) / m_delta_count : 0.0;
+      double dt_std  = m_delta_count > 1
+          ? std::sqrt(std::max(0.0,
+              static_cast<double>(m_delta_sq_sum) / m_delta_count
+              - dt_mean * dt_mean))
+          : 0.0;
       LogInfo << " [time-align: monitor_chan=" << m_monitor_channel
               << " ref_peak=" << m_ref_peak_time
-              << " skipped_missing=" << m_skipped_ref_missing << ']';
+              << " skipped_missing=" << m_skipped_ref_missing
+              << " jitter (μ ± σ): " << dt_mean << " ± " << dt_std << " bins"
+              << " (N=" << m_delta_count << ")]";
+    }
     LogInfo << '\n';
 
     for (auto &[pmtId, gd] : m_acc) {
@@ -320,6 +334,9 @@ private:
   int  m_monitor_channel{43303};
   int  m_ref_peak_time{-1};
   int  m_skipped_ref_missing{0};
+  long m_delta_sum{0};
+  long m_delta_sq_sum{0};
+  int  m_delta_count{0};
 
   mutable std::array<double, kWfLength> m_shifted{};
 
