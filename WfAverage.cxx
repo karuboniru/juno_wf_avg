@@ -19,12 +19,13 @@
 
 #include <TTree.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdlib>
-#include <limits>
 #include <map>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -164,28 +165,16 @@ public:
           if (mon_it != mon_evt->channelData().end()) {
             const auto &mon_adc = mon_it->second->adc();
             if (mon_adc.size() == kWfLength) {
-              double cur_peak_val = std::numeric_limits<double>::max();
-              int    cur_peak_idx = -1;
-              for (int i = 0; i < kWfLength; ++i) {
-                double v = static_cast<double>(mon_adc[i]);
-                if (v < cur_peak_val) {
-                  cur_peak_val = v;
-                  cur_peak_idx = i;
-                }
-              }
+              auto min_it = std::min_element(mon_adc.begin(), mon_adc.end());
+              int cur_peak_idx = static_cast<int>(std::distance(mon_adc.begin(), min_it));
 
-              if (!m_first_event_done) {
-                if (cur_peak_idx >= 0) {
-                  m_ref_peak_time = cur_peak_idx;
-                  m_first_event_done = true;
-                }
+              if (!m_ref_peak_time.has_value()) {
+                m_ref_peak_time = cur_peak_idx;
               } else {
-                if (cur_peak_idx >= 0) {
-                  delta_t = m_ref_peak_time - cur_peak_idx;
-                  m_delta_sum += delta_t;
-                  m_delta_sq_sum += delta_t * delta_t;
-                  ++m_delta_count;
-                }
+                delta_t = *m_ref_peak_time - cur_peak_idx;
+                m_delta_sum += delta_t;
+                m_delta_sq_sum += delta_t * delta_t;
+                ++m_delta_count;
               }
             }
           } else {
@@ -218,25 +207,20 @@ public:
 
       auto &gd = m_acc[pmtId];
 
+      int start = 0, end = kWfLength, offset = 0;
       if (m_time_align && delta_t != 0) {
-        m_shifted.fill(0.0);
-        for (int i = 0; i < kWfLength; ++i) {
-          double v = (static_cast<double>(adc[i]) - baseline) * scale;
-          int new_i = i + delta_t;
-          if (new_i >= 0 && new_i < kWfLength) {
-            m_shifted[new_i] = v;
-          }
+        if (delta_t > 0) {
+          end    = kWfLength - delta_t;
+          offset = delta_t;
+        } else {
+          start  = -delta_t;
+          offset = delta_t;
         }
-        for (int i = 0; i < kWfLength; ++i) {
-          gd.sum[i]    += m_shifted[i];
-          gd.sq_sum[i] += m_shifted[i] * m_shifted[i];
-        }
-      } else {
-        for (int i = 0; i < kWfLength; ++i) {
-          double v = (static_cast<double>(adc[i]) - baseline) * scale;
-          gd.sum[i]    += v;
-          gd.sq_sum[i] += v * v;
-        }
+      }
+      for (int i = start; i < end; ++i) {
+        double v = (static_cast<double>(adc[i]) - baseline) * scale;
+        gd.sum[i + offset]    += v;
+        gd.sq_sum[i + offset] += v * v;
       }
 
       ++gd.count;
@@ -262,7 +246,7 @@ public:
               - dt_mean * dt_mean))
           : 0.0;
       LogInfo << " [time-align: monitor_chan=" << m_monitor_channel
-              << " ref_peak=" << m_ref_peak_time
+              << " ref_peak=" << m_ref_peak_time.value_or(-1)
               << " skipped_missing=" << m_skipped_ref_missing
               << " jitter (μ ± σ): " << dt_mean << " ± " << dt_std << " bins"
               << " (N=" << m_delta_count << ")]";
@@ -330,15 +314,12 @@ private:
 
   bool m_time_align{};
   bool m_skip_on_missing{};
-  bool m_first_event_done{false};
+  std::optional<int> m_ref_peak_time{};
   int  m_monitor_channel{43303};
-  int  m_ref_peak_time{-1};
   int  m_skipped_ref_missing{0};
   long m_delta_sum{0};
   long m_delta_sq_sum{0};
   int  m_delta_count{0};
-
-  mutable std::array<double, kWfLength> m_shifted{};
 
   int                m_out_channel_id{};
   unsigned int       m_out_copy_id{};
