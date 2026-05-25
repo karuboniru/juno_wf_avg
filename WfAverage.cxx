@@ -4,6 +4,7 @@
 #include <EvtNavigator/EvtNavHelper.h>
 #include <EvtNavigator/EvtNavigator.h>
 #include <EvtNavigator/NavBuffer.h>
+#include <EDMPath/EDMPath.hh>
 #include <Geometry/CdGeom.h>
 #include <Geometry/IPMTParamSvc.h>
 #include <Geometry/IRecGeomSvc.hh>
@@ -49,6 +50,7 @@ public:
     declProp("TriggerTypeFilter", m_trig_filter = std::string{});
     declProp("TimeAlign", m_time_align = false);
     declProp("SkipOnMissingRef", m_skip_on_missing = true);
+    declProp("MonitorChannel", m_monitor_channel = 43303);
   }
 
   WfAverage(WfAverage &&) = delete;
@@ -145,71 +147,41 @@ public:
 
     int delta_t = 0;
 
-    if (m_time_align && !m_first_event_done) {
-      IDService *idServ = IDService::getIdServ();
+    if (m_time_align) {
+      auto mon_hdr = JM::getHeaderObject<JM::CdWaveformHeader>(
+          nav, JM::Elec::CdMonitorWaveform::Path);
+      if (mon_hdr && mon_hdr->hasEvent()) {
+        auto *mon_evt = dynamic_cast<JM::CdWaveformEvt *>(mon_hdr->event());
+        if (mon_evt) {
+          auto mon_it = mon_evt->channelData().find(m_monitor_channel);
+          if (mon_it != mon_evt->channelData().end()) {
+            const auto &mon_adc = mon_it->second->adc();
+            if (mon_adc.size() == kWfLength) {
+              double cur_peak_val = std::numeric_limits<double>::max();
+              int    cur_peak_idx = -1;
+              for (int i = 0; i < kWfLength; ++i) {
+                double v = static_cast<double>(mon_adc[i]);
+                if (v < cur_peak_val) {
+                  cur_peak_val = v;
+                  cur_peak_idx = i;
+                }
+              }
 
-      double best_val  = std::numeric_limits<double>::max();
-      int    best_chan = -1;
-      int    best_idx  = -1;
-
-      for (const auto &[pmtId, waveform] : channels) {
-        const auto &adc = waveform->adc();
-        if (adc.size() != kWfLength) {
-          LogFatal << "Unexpected waveform length " << adc.size()
-                   << " for PMT " << pmtId << " (expected " << kWfLength << ')'
-                   << '\n';
-          std::abort();
-        }
-        if (!waveform->isHighGain()) continue;
-
-        Identifier pid(pmtId);
-        unsigned int copyId = idServ->id2CopyNo(pid);
-        if (m_pmt_svc->isNNVT(copyId)) continue;
-
-        double baseline = std::accumulate(adc.begin(),
-                                          adc.begin() + m_baseline_n, 0.0)
-                        / m_baseline_n;
-
-        for (int i = 0; i < kWfLength; ++i) {
-          double v = (static_cast<double>(adc[i]) - baseline) * ratio;
-          if (v < best_val) {
-            best_val  = v;
-            best_chan = pmtId;
-            best_idx  = i;
+              if (!m_first_event_done) {
+                if (cur_peak_idx >= 0) {
+                  m_ref_peak_time = cur_peak_idx;
+                  m_first_event_done = true;
+                }
+              } else {
+                if (cur_peak_idx >= 0)
+                  delta_t = m_ref_peak_time - cur_peak_idx;
+              }
+            }
+          } else {
+            ++m_skipped_ref_missing;
+            if (m_skip_on_missing) return true;
           }
         }
-      }
-
-      m_ref_channel   = best_chan;
-      m_ref_peak_time = best_idx;
-      m_first_event_done = true;
-
-      if (best_chan < 0)
-        LogWarn << "TimeAlign: no Hamamatsu HG channel found in first event"
-                << '\n';
-    } else if (m_time_align && m_ref_channel >= 0) {
-      auto it = channels.find(m_ref_channel);
-      if (it != channels.end()) {
-        const auto &ref_wf  = it->second;
-        const auto &ref_adc = ref_wf->adc();
-        double ref_baseline = std::accumulate(ref_adc.begin(),
-                                              ref_adc.begin() + m_baseline_n, 0.0)
-                            / m_baseline_n;
-        double ref_scale = ref_wf->isHighGain() ? ratio : 1.0;
-
-        double cur_peak_val = std::numeric_limits<double>::max();
-        int    cur_peak_idx = -1;
-        for (int i = 0; i < kWfLength; ++i) {
-          double v = (static_cast<double>(ref_adc[i]) - ref_baseline) * ref_scale;
-          if (v < cur_peak_val) {
-            cur_peak_val = v;
-            cur_peak_idx = i;
-          }
-        }
-        delta_t = m_ref_peak_time - cur_peak_idx;
-      } else {
-        ++m_skipped_ref_missing;
-        if (m_skip_on_missing) return true;
       }
     }
 
@@ -271,7 +243,7 @@ public:
             << ", with CD waveform: " << m_events_with_cd
             << ", trigger events: " << m_total_trigger_events;
     if (m_time_align)
-      LogInfo << " [time-align: ref_chan=" << m_ref_channel
+      LogInfo << " [time-align: monitor_chan=" << m_monitor_channel
               << " ref_peak=" << m_ref_peak_time
               << " skipped_missing=" << m_skipped_ref_missing << ']';
     LogInfo << '\n';
@@ -337,7 +309,7 @@ private:
   bool m_time_align{};
   bool m_skip_on_missing{};
   bool m_first_event_done{false};
-  int  m_ref_channel{-1};
+  int  m_monitor_channel{43303};
   int  m_ref_peak_time{-1};
   int  m_skipped_ref_missing{0};
 
