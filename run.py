@@ -17,7 +17,9 @@ def get_parser():
     parser.add_argument("--user-output", default="wf_avg.root",
                         help="output ROOT file")
     parser.add_argument("--time-align", action="store_true", default=False,
-                        help="enable trigger time alignment via Hamamatsu ref channel")
+                        help="enable trigger time alignment via monitor PMT")
+    parser.add_argument("--monitor-channel", type=int, default=43303,
+                        help="monitor PMT channel ID for time alignment (default: 43303)")
     parser.add_argument("--ignore-low-gain", action="store_true", default=False,
                         help="skip low-gain events entirely")
     parser.add_argument("--trigger-type", default=None,
@@ -66,6 +68,7 @@ def run(args):
         wfa.property("TriggerTypeFilter").set(args.trigger_type)
     if args.time_align:
         wfa.property("TimeAlign").set(True)
+        wfa.property("MonitorChannel").set(args.monitor_channel)
     if args.no_skip_missing_ref:
         wfa.property("SkipOnMissingRef").set(False)
 

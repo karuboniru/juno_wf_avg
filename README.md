@@ -49,6 +49,7 @@ python run.py --input-list files.txt                [--evtmax N] [--user-output 
 | 选项 | 说明 |
 |---|---|
 | `--time-align` | 启用 trigger 时间校准（使用监控 PMT 波形消除 jitter） |
+| `--monitor-channel ID` | 指定监控 PMT channel ID（默认 43303） |
 | `--ignore-low-gain` | 跳过所有低增益事件，仅累加 HG |
 | `--trigger-type TYPE` | 按 CdTrigger 类型过滤事件（如 `Calibration`），默认不过滤 |
 | `--no-skip-missing-ref` | 当参考 channel 缺失时不跳过 event（以 `δt=0` 处理），默认跳过 |

@@ -3,12 +3,14 @@
 #   make [all]                        cmake build (default)
 #   make RUN=<id> build_list           generate EOS file list
 #   make RUN=<id> analysis             run waveform averaging
+#   make RUN=<id> MONITOR_CHAN=<n> analysis   (override monitor PMT channel)
 #   make RUN=<id> plot                 draw averaged waveforms (±1σ band)
 #   make RUN=<id> plot_no_band         draw averaged waveforms (no band)
 #   make clean                         remove build/ and analysis/
 
 OUT       ?= analysis
 ANA_OPT   ?= --time-align --trigger-type="Calibration"
+MONITOR_CHAN ?= 43303
 EOS_BASE  ?= /eos/juno/juno-rtraw
 JUNO_SW   ?= J25.7.1
 TRIGGER   ?= global_trigger
@@ -54,7 +56,7 @@ build_list: check_run $(LIST_FILE)
 # ---- Waveform averaging ----
 $(ROOT_FILE): $(LIST_FILE) run.py WfAverage.cxx $(LIB_WFA)
 	python run.py --input-list $(LIST_FILE) --evtmax $(EVTMAX) \
-		--user-output $(ROOT_FILE) $(ANA_OPT)
+		--user-output $(ROOT_FILE) $(ANA_OPT) --monitor-channel $(MONITOR_CHAN)
 
 analysis: check_run $(ROOT_FILE)
 
