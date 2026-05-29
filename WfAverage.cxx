@@ -41,6 +41,8 @@ struct GainAccum {
   int count{0};
   int num_hg{0};
   int num_lg{0};
+  std::array<double, 8> fadc_baseline_sum{};
+  int fadc_baseline_count{0};
 };
 
 // ══════════════════════════════════════════════════════════════════
@@ -51,6 +53,7 @@ public:
     declProp("HighGainScale", m_hg_scale = 0.08);
     declProp("LowGainScale", m_lg_scale = 0.55);
     declProp("BaselineSampleCount", m_baseline_n = 100);
+    declProp("PerFadcBaseline", m_per_fadc_baseline = true);
     declProp("IgnoreLowGain", m_ignore_lg = false);
     declProp("TriggerTypeFilter", m_trig_filter = std::string{});
     declProp("TriggerInclusive", m_trigger_inclusive = false);
@@ -203,10 +206,6 @@ public:
       if (m_ignore_lg && !is_hg)
         continue;
 
-      double baseline = std::accumulate(adc.begin(),
-                                        adc.begin() + m_baseline_n, 0.0)
-                      / m_baseline_n;
-
       double scale = is_hg ? ratio : 1.0;
 
       auto &gd = m_acc[pmtId];
@@ -217,10 +216,26 @@ public:
         end    = std::min(kWfLength, kWfLength - delta_t);
         offset = delta_t;
       }
-      for (int i = start; i < end; ++i) {
-        double v = (static_cast<double>(adc[i]) - baseline) * scale;
-        gd.sum[i + offset]    += v;
-        gd.sq_sum[i + offset] += v * v;
+
+      if (m_per_fadc_baseline) {
+        for (int i = 0; i < m_baseline_n; ++i)
+          gd.fadc_baseline_sum[i & 7] += adc[i] * scale;
+        ++gd.fadc_baseline_count;
+
+        for (int i = start; i < end; ++i) {
+          double v = static_cast<double>(adc[i]) * scale;
+          gd.sum[i + offset]    += v;
+          gd.sq_sum[i + offset] += v * v;
+        }
+      } else {
+        double baseline = std::accumulate(adc.begin(),
+                                          adc.begin() + m_baseline_n, 0.0)
+                        / m_baseline_n;
+        for (int i = start; i < end; ++i) {
+          double v = (static_cast<double>(adc[i]) - baseline) * scale;
+          gd.sum[i + offset]    += v;
+          gd.sq_sum[i + offset] += v * v;
+        }
       }
 
       ++gd.count;
@@ -286,6 +301,12 @@ public:
         m_out_stddev[i]   = safe_sqrt(var);
       }
 
+      if (m_per_fadc_baseline && gd.fadc_baseline_count > 0) {
+        double inv = 1.0 / static_cast<double>(gd.fadc_baseline_count);
+        for (int i = 0; i < kWfLength; ++i)
+          m_out_waveform[i] -= gd.fadc_baseline_sum[i & 7] * inv;
+      }
+
       m_tree->Fill();
     }
 
@@ -310,6 +331,7 @@ private:
   double      m_hg_scale{};
   double m_lg_scale{};
   int    m_baseline_n{};
+  bool   m_per_fadc_baseline{};
   std::string m_trig_filter{};
 
   bool m_time_align{};

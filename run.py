@@ -31,6 +31,9 @@ def get_parser():
     parser.add_argument("--no-skip-missing-ref", action="store_true", default=False,
                         help="process events with delta_t=0 when ref channel absent "
                              "(default: skip)")
+    parser.add_argument("--per-fadc-baseline", action=argparse.BooleanOptionalAction, default=True,
+                        help="compute 8 per-FADC baselines to cancel interleaving offset "
+                             "(default: enabled). Use --no-per-fadc-baseline to disable.")
     return parser
 
 
@@ -77,6 +80,8 @@ def run(args):
         wfa.property("MonitorChannel").set(args.monitor_channel)
     if args.no_skip_missing_ref:
         wfa.property("SkipOnMissingRef").set(False)
+    if not args.per_fadc_baseline:
+        wfa.property("PerFadcBaseline").set(False)
 
     task.show()
     task.run()
